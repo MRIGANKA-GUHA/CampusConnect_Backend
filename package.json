@@ -1,0 +1,24 @@
+{
+  "name": "campusconnect_backend",
+  "version": "1.0.0",
+  "description": "Backend for the CampusConnect Application",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js"
+  },
+  "author": "MRIGANKA GUHA",
+  "license": "ISC",
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  },
+  "dependencies": {
+    "axios": "^1.14.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.1",
+    "express": "^5.2.1",
+    "firebase": "^12.11.0",
+    "firebase-admin": "^13.7.0"
+  }
+}
