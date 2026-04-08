@@ -27,7 +27,7 @@ app.use("/api/auth", authRoutes);
 
 // Health check
 app.get("/", (req, res) => {
-  res.json({ message: "CampusConnect Backend is running 🚀" });
+  res.json({ message: "CampusConnect Backend is running" });
 });
 
 export default app;
