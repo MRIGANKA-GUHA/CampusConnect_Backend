@@ -2,6 +2,8 @@ import admin from "../db/firebase.js";
 import axios from "axios";
 import bcrypt from "bcrypt";
 import { sendOtpEmail } from "../services/emailService.js";
+import { User } from "../models/User.js";
+import { createSession, deleteSession } from "../middlewares/verifyToken.js";
 
 // Firebase API Key from environment (should match your project)
 const FIREBASE_API_KEY = process.env.VITE_FIREBASE_API_KEY;
@@ -85,16 +87,15 @@ export const verifyOtp = async (req, res) => {
       disabled: false,
     });
 
-    // Create a permanent user profile in Firestore
-    const userProfile = {
+    // Create a permanent user profile using the User model
+    const userProfile = new User({
       uid: data.uid,
       email: data.email,
       displayName: data.displayName,
       rollNo: data.rollNo,
       role: data.role,
-      createdAt: new Date().toISOString(),
       isVerified: true
-    };
+    }).toFirestore();
 
     await admin.firestore().collection("users").doc(data.uid).set(userProfile);
 
@@ -103,6 +104,9 @@ export const verifyOtp = async (req, res) => {
 
     // Create a custom token for immediate login
     const customToken = await admin.auth().createCustomToken(data.uid);
+
+    // Create backend session (30 min timeout)
+    await createSession(data.uid);
 
     return res.status(200).json({
       message: "Account verified successfully",
@@ -147,6 +151,9 @@ export const loginUser = async (req, res) => {
     // Create a custom token for this user
     const customToken = await admin.auth().createCustomToken(localId);
 
+    // Create backend session (30 min timeout)
+    await createSession(localId);
+
     return res.status(200).json({
       message: "Login successful",
       token: customToken,
@@ -187,18 +194,18 @@ export const oauthLogin = async (req, res) => {
     let userData = {};
 
     if (!userDoc.exists) {
-      // First time social login -> Create profile
-      userData = {
+      // First time social login -> Create profile using User model
+      const newUser = new User({
         uid: userAuth.uid,
         email: userAuth.email,
         displayName: userAuth.displayName,
         photoURL: userAuth.photoURL,
-        role: "student", // Default role
-        rollNo: "", // Social login doesn't have Roll No
-        createdAt: new Date().toISOString(),
+        role: "student",
         isVerified: true,
         authProvider: decodedToken.firebase.sign_in_provider
-      };
+      });
+      
+      userData = newUser.toFirestore();
       await userDocRef.set(userData);
     } else {
       userData = userDoc.data();
@@ -206,6 +213,9 @@ export const oauthLogin = async (req, res) => {
 
     // Create custom token for session management
     const customToken = await admin.auth().createCustomToken(userAuth.uid);
+
+    // Create backend session (30 min timeout)
+    await createSession(userAuth.uid);
 
     return res.status(200).json({
       message: "OAuth login successful",
@@ -240,5 +250,72 @@ export const getProfile = async (req, res) => {
     });
   } catch (error) {
     return res.status(500).json({ error: error.message });
+  }
+};
+
+// ─── Logout (delete backend session) ─────────────────────────────────────────
+export const logoutUser = async (req, res) => {
+  try {
+    await deleteSession(req.user.uid);
+    return res.status(200).json({ message: "Logged out successfully" });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+};
+
+// ─── Update Profile (displayName, etc.) ────────────────────────────────────────
+export const updateProfile = async (req, res) => {
+  const { displayName, rollNo, phoneNo, bio, department } = req.body;
+  const uid = req.user.uid;
+
+  if (!displayName) {
+    return res.status(400).json({ error: "Display Name is required." });
+  }
+
+  try {
+    // 1. Update Firebase Auth displayName
+    await admin.auth().updateUser(uid, { displayName });
+
+    // 2. Fetch current user from Firestore
+    const userRef = admin.firestore().collection("users").doc(uid);
+    const userDoc = await userRef.get();
+
+    if (!userDoc.exists) {
+      return res.status(404).json({ error: "User not found in database." });
+    }
+
+    const userData = userDoc.data();
+    
+    // Only allow student-specific fields to be updated if the user is a student
+    const isStudent = userData.role === 'student';
+    const updatedRollNo = isStudent ? (rollNo || "") : "";
+    const updatedBio = isStudent ? (bio || "") : "";
+    const updatedDepartment = isStudent ? (department || "") : "";
+
+    // 3. Update Firestore Document
+    const updates = {
+      displayName,
+      phoneNo: phoneNo || "",
+      rollNo: updatedRollNo,
+      bio: updatedBio,
+      department: updatedDepartment,
+      updatedAt: new Date().toISOString()
+    };
+
+    await userRef.update(updates);
+
+    // Return the combined updated data so frontend can update AuthContext state
+    return res.status(200).json({
+      message: "Profile updated successfully.",
+      user: {
+        ...userData,
+        ...updates,
+        uid // ensure uid is returned
+      }
+    });
+
+  } catch (error) {
+    console.error("Profile update error:", error);
+    return res.status(500).json({ error: error.message || "Failed to update profile." });
   }
 };

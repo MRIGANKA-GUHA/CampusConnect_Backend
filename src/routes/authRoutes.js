@@ -1,5 +1,5 @@
 import express from "express";
-import { registerUser, verifyOtp, loginUser, oauthLogin, getProfile } from "../controllers/authController.js";
+import { registerUser, verifyOtp, loginUser, oauthLogin, getProfile, logoutUser, updateProfile } from "../controllers/authController.js";
 import { verifyToken } from "../middlewares/verifyToken.js";
 
 const router = express.Router();
@@ -18,5 +18,11 @@ router.post("/oauth", oauthLogin);
 
 // GET  /api/auth/profile   → protected: get current user profile
 router.get("/profile", verifyToken, getProfile);
+
+// PUT  /api/auth/profile   → protected: update display name and roll number
+router.put("/profile", verifyToken, updateProfile);
+
+// POST /api/auth/logout    → protected: invalidate backend session
+router.post("/logout", verifyToken, logoutUser);
 
 export default router;
