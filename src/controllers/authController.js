@@ -4,6 +4,7 @@ import bcrypt from "bcrypt";
 import { sendOtpEmail } from "../services/emailService.js";
 import { User } from "../models/User.js";
 import { createSession, deleteSession } from "../middlewares/verifyToken.js";
+import cloudinary from "../db/cloudinary.js";
 
 // Firebase API Key from environment (should match your project)
 const FIREBASE_API_KEY = process.env.VITE_FIREBASE_API_KEY;
@@ -317,5 +318,58 @@ export const updateProfile = async (req, res) => {
   } catch (error) {
     console.error("Profile update error:", error);
     return res.status(500).json({ error: error.message || "Failed to update profile." });
+  }
+};
+
+// ─── Upload Profile Picture (to Cloudinary) ──────────────────────────────────
+export const uploadProfilePicture = async (req, res) => {
+  const uid = req.user.uid;
+
+  if (!req.file) {
+    return res.status(400).json({ error: "No image file provided." });
+  }
+
+  try {
+    // 1. Upload the buffer to Cloudinary using a stream
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        folder: "campusconnect/profiles",
+        public_id: `user_${uid}`,
+        overwrite: true,
+        resource_type: "image",
+        transformation: [
+          { width: 400, height: 400, crop: "fill", gravity: "face" } // Auto-crop to square face
+        ]
+      },
+      async (error, result) => {
+        if (error) {
+          console.error("Cloudinary upload error:", error);
+          return res.status(500).json({ error: "Failed to upload image to Cloudinary." });
+        }
+
+        const photoURL = result.secure_url;
+
+        // 2. Update Firebase Auth photoURL
+        await admin.auth().updateUser(uid, { photoURL });
+
+        // 3. Update Firestore Users collection
+        await admin.firestore().collection("users").doc(uid).update({
+          photoURL,
+          updatedAt: new Date().toISOString()
+        });
+
+        return res.status(200).json({
+          message: "Profile picture updated successfully.",
+          photoURL
+        });
+      }
+    );
+
+    // Write the buffer to the Cloudinary stream
+    uploadStream.end(req.file.buffer);
+
+  } catch (error) {
+    console.error("Profile picture error:", error);
+    return res.status(500).json({ error: "An unexpected error occurred during upload." });
   }
 };
