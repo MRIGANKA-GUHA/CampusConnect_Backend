@@ -1,8 +1,8 @@
 import admin from "../db/firebase.js";
 import axios from "axios";
-import bcrypt from "bcrypt";
 import { sendOtpEmail } from "../services/emailService.js";
 import { User } from "../models/User.js";
+import { validateUser } from "../validators/userValidator.js";
 import { createSession, deleteSession } from "../middlewares/verifyToken.js";
 import cloudinary from "../db/cloudinary.js";
 
@@ -11,7 +11,7 @@ const FIREBASE_API_KEY = process.env.VITE_FIREBASE_API_KEY;
 
 // ─── Register Init (Step 1: Create Disabled User & Send OTP) ──────────────────
 export const registerUser = async (req, res) => {
-  const { email, password, displayName, rollNo, role } = req.body;
+  const { email, password, displayName, rollNo, department, role } = req.body;
 
   if (!email || !password || !displayName) {
     return res.status(400).json({ error: "All fields are required" });
@@ -31,6 +31,7 @@ export const registerUser = async (req, res) => {
     const expires = Date.now() + 10 * 60 * 1000; // 10 minutes
 
     // 3. Store OTP and Metadata in Firestore
+    //    department and rollNo are stored but will be cleared by the User model if role is admin
     await admin.firestore().collection("verificationCodes").doc(email).set({
       email,
       otp,
@@ -38,6 +39,7 @@ export const registerUser = async (req, res) => {
       uid: userRecord.uid,
       displayName,
       rollNo: rollNo || "",
+      department: department || "",
       role: role || "student"
     });
 
@@ -89,15 +91,24 @@ export const verifyOtp = async (req, res) => {
     });
 
     // Create a permanent user profile using the User model
-    const userProfile = new User({
+    // The User constructor will strip rollNo/department automatically if role === "admin"
+    const userPayload = {
       uid: data.uid,
       email: data.email,
       displayName: data.displayName,
       rollNo: data.rollNo,
+      department: data.department,
       role: data.role,
       isVerified: true
-    }).toFirestore();
+    };
 
+    // Validate against the User schema before persisting
+    const { isValid, errors } = validateUser(userPayload);
+    if (!isValid) {
+      return res.status(400).json({ error: "Invalid user data", details: errors });
+    }
+
+    const userProfile = new User(userPayload).toFirestore();
     await admin.firestore().collection("users").doc(data.uid).set(userProfile);
 
     // Clean up verification code
@@ -155,21 +166,29 @@ export const loginUser = async (req, res) => {
     // Create backend session (30 min timeout)
     await createSession(localId);
 
+    // Normalise through the User model so admins never receive rollNo/department
+    const safeUser = userDoc.exists
+      ? new User({ ...userData }).toFirestore()
+      : { uid: localId, email: userAuth.email, displayName: userAuth.displayName, photoURL: userAuth.photoURL || "" };
+
     return res.status(200).json({
       message: "Login successful",
       token: customToken,
       user: {
+        ...safeUser,
         uid: localId,
         email: userAuth.email,
         displayName: userAuth.displayName,
-        photoURL: userAuth.photoURL,
-        ...userData
+        photoURL: userAuth.photoURL || safeUser.photoURL
       },
     });
   } catch (error) {
-    if (error.response?.data?.error?.message === 'INVALID_PASSWORD' || 
-        error.response?.data?.error?.message === 'EMAIL_NOT_FOUND') {
+    const fbError = error.response?.data?.error?.message;
+    if (fbError === 'INVALID_PASSWORD' || fbError === 'EMAIL_NOT_FOUND') {
       return res.status(401).json({ error: "Invalid email or password" });
+    }
+    if (fbError === 'USER_DISABLED') {
+      return res.status(403).json({ error: "Your account has been suspended. Please contact the administrator." });
     }
     return res.status(401).json({ error: "Authentication failed" });
   }
@@ -196,7 +215,7 @@ export const oauthLogin = async (req, res) => {
 
     if (!userDoc.exists) {
       // First time social login -> Create profile using User model
-      const newUser = new User({
+      const oauthPayload = {
         uid: userAuth.uid,
         email: userAuth.email,
         displayName: userAuth.displayName,
@@ -204,9 +223,15 @@ export const oauthLogin = async (req, res) => {
         role: "student",
         isVerified: true,
         authProvider: decodedToken.firebase.sign_in_provider
-      });
-      
-      userData = newUser.toFirestore();
+      };
+
+      // Validate against the User schema before persisting
+      const { isValid, errors } = validateUser(oauthPayload);
+      if (!isValid) {
+        return res.status(400).json({ error: "Invalid OAuth user data", details: errors });
+      }
+
+      userData = new User(oauthPayload).toFirestore();
       await userDocRef.set(userData);
     } else {
       userData = userDoc.data();
@@ -287,13 +312,23 @@ export const updateProfile = async (req, res) => {
 
     const userData = userDoc.data();
     
-    // Only allow student-specific fields to be updated if the user is a student
-    const isStudent = userData.role === 'student';
-    const updatedRollNo = isStudent ? (rollNo || "") : "";
-    const updatedBio = isStudent ? (bio || "") : "";
-    const updatedDepartment = isStudent ? (department || "") : "";
+    // Admins cannot have rollNo or department — cleared regardless of what was sent
+    const isAdmin = userData.role === 'admin';
+    const updatedRollNo = isAdmin ? "" : (rollNo || "");
+    const updatedBio = isAdmin ? "" : (bio || "");
+    const updatedDepartment = isAdmin ? "" : (department || "");
 
-    // 3. Update Firestore Document
+    // 3. Validate data via userValidator before updating
+    const { isValid: profileValid, errors: profileErrors } = validateUser({
+      uid,
+      email: userData.email,
+      displayName,
+      role: userData.role
+    });
+    if (!profileValid) {
+      return res.status(400).json({ error: "Invalid profile data", details: profileErrors });
+    }
+
     const updates = {
       displayName,
       phoneNo: phoneNo || "",

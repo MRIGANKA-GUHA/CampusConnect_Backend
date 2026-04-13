@@ -10,6 +10,7 @@ export class User {
     displayName,
     rollNo = "",
     role = "student",
+    department = "",
     photoURL = "",
     isVerified = false,
     createdAt = new Date().toISOString(),
@@ -20,8 +21,11 @@ export class User {
     this.uid = uid;
     this.email = email;
     this.displayName = displayName;
-    this.rollNo = rollNo;
     this.role = role;
+    // rollNo and department are only meaningful for non-admin roles
+    const isAdmin = role === "admin";
+    this.rollNo = isAdmin ? "" : rollNo;
+    this.department = isAdmin ? "" : department;
     this.photoURL = photoURL;
     this.isVerified = isVerified;
     this.createdAt = createdAt;
@@ -41,6 +45,7 @@ export class User {
       displayName: this.displayName,
       rollNo: this.rollNo,
       role: this.role,
+      department: this.department,
       photoURL: this.photoURL,
       isVerified: this.isVerified,
       createdAt: this.createdAt,
@@ -50,22 +55,6 @@ export class User {
     };
   }
 
-  /**
-   * Basic validation logic
-   */
-  static validate(data) {
-    const errors = [];
-    if (!data.uid) errors.push("UID is required");
-    if (!data.email) errors.push("Email is required");
-    if (!data.displayName) errors.push("Display Name is required");
-    if (!["student", "admin", "convenor"].includes(data.role)) {
-      errors.push("Invalid role assigned");
-    }
-    return {
-      isValid: errors.length === 0,
-      errors
-    };
-  }
 }
 
 export const USER_ROLES = {
