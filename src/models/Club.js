@@ -7,13 +7,19 @@ export class Club {
   constructor({
     id,
     name,
-    description,
+    description = "",
     convenorId,
+    clubEmail = "",
+    clubAuthUid = "",
     category,
     status = "active",
     logoURL = "",
+    coverURL = "",
+    tagline = "",
     socialLinks = {},
     metadata = {},
+    members = [],
+    events = [],
     createdAt = new Date().toISOString(),
     updatedAt = new Date().toISOString()
   }) {
@@ -21,16 +27,21 @@ export class Club {
     this.name = name;
     this.description = description;
     this.convenorId = convenorId;
+    this.clubEmail = clubEmail;
+    this.clubAuthUid = clubAuthUid;
     this.category = category;
     this.status = status;
     this.logoURL = logoURL;
+    this.coverURL = coverURL;
+    this.tagline = tagline;
     this.socialLinks = {
       instagram: socialLinks.instagram || "",
       linkedin: socialLinks.linkedin || "",
       website: socialLinks.website || "",
-      ...socialLinks
     };
     this.metadata = metadata;
+    this.members = members;
+    this.events = events;
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;
   }
@@ -45,11 +56,17 @@ export class Club {
       name: this.name,
       description: this.description,
       convenorId: this.convenorId,
+      clubEmail: this.clubEmail,
+      clubAuthUid: this.clubAuthUid,
       category: this.category,
       status: this.status,
       logoURL: this.logoURL,
+      coverURL: this.coverURL,
+      tagline: this.tagline,
       socialLinks: this.socialLinks,
       metadata: this.metadata,
+      members: this.members,
+      events: this.events,
       createdAt: this.createdAt,
       updatedAt: this.updatedAt
     };
