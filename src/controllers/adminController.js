@@ -1,5 +1,7 @@
 import admin from "../db/firebase.js";
 import { Club } from "../models/Club.js";
+import { Notice } from "../models/Notice.js";
+import { uploadToCloudinary } from "../utils/uploadPdf.js";
 
 // ─── Get Student Count ─────────────────────────────────────────────────────────
 export const getStudentCount = async (req, res) => {
@@ -194,6 +196,65 @@ export const getPublicClubs = async (req, res) => {
   }
 };
 
+// ─── Get Public Stats (No Auth) ────────────────────────────────────────────────
+export const getPublicStats = async (req, res) => {
+  try {
+    const firestore = admin.firestore();
+
+    // 1. Club Count (Active only)
+    const clubsSnapshot = await firestore
+      .collection("clubs")
+      .where("status", "==", "active")
+      .count()
+      .get();
+    
+    // 2. Event Count (Published or Completed)
+    const eventsSnapshot = await firestore
+      .collection("events")
+      .where("status", "in", ["published", "completed"])
+      .count()
+      .get();
+
+    // 3. Member Count (Students + Convenors)
+    const membersSnapshot = await firestore
+      .collection("users")
+      .where("role", "in", ["student", "convenor"])
+      .count()
+      .get();
+
+    return res.status(200).json({
+      clubs: clubsSnapshot.data().count,
+      events: eventsSnapshot.data().count,
+      members: membersSnapshot.data().count
+    });
+  } catch (error) {
+    console.error("Public stats error:", error);
+    return res.status(500).json({ error: error.message });
+  }
+};
+
+// ─── Get Public Events (No Auth) ──────────────────────────────────────────────
+export const getPublicEvents = async (req, res) => {
+  try {
+    const eventsSnapshot = await admin.firestore()
+      .collection("events")
+      .where("status", "in", ["published", "completed"])
+      .orderBy("date", "asc")
+      .limit(6)
+      .get();
+
+    const events = [];
+    eventsSnapshot.forEach(doc => {
+      events.push({ id: doc.id, ...doc.data() });
+    });
+
+    return res.status(200).json({ events });
+  } catch (error) {
+    console.error("Public events error:", error);
+    return res.status(500).json({ error: error.message });
+  }
+};
+
 // ─── Get All Clubs (Admin) ──────────────────────────────────────────────────────
 export const getClubs = async (req, res) => {
   try {
@@ -376,3 +437,69 @@ export const getConvenors = async (req, res) => {
     return res.status(500).json({ error: error.message });
   }
 };
+
+// ─── Get All Notices (Admin) ────────────────────────────────────────────────────
+export const getNotices = async (req, res) => {
+  try {
+    const snapshot = await admin.firestore()
+      .collection("notices")
+      .orderBy("createdAt", "desc")
+      .get();
+
+    const notices = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    return res.status(200).json({ notices });
+  } catch (error) {
+    console.error("Get notices error:", error);
+    return res.status(500).json({ error: error.message });
+  }
+};
+
+// ─── Create Notice (Admin) ──────────────────────────────────────────────────────
+export const createNotice = async (req, res) => {
+  try {
+    const { uid, displayName, email } = req.user;
+    const { title, content, category, priority, targetAudience, clubId, attachments } = req.body;
+
+    if (!title || !content || !category) {
+      return res.status(400).json({ error: "title, content and category are required." });
+    }
+
+    // Handle file upload to Cloudinary if provided
+    let finalAttachments = attachments || [];
+    if (req.file) {
+      try {
+        const cloudinaryUrl = await uploadToCloudinary(req.file.buffer, 'notices');
+        finalAttachments = [cloudinaryUrl]; // Store as array
+        console.log('[Admin] Notice PDF uploaded to Cloudinary:', cloudinaryUrl);
+      } catch (uploadErr) {
+        console.error('[Admin] Cloudinary upload failed:', uploadErr);
+        // We continue with empty attachments if upload fails, or you could return an error
+      }
+    }
+
+    const now = new Date().toISOString();
+    const docRef = admin.firestore().collection("notices").doc();
+
+    const notice = new Notice({
+      id: docRef.id,
+      title: title.trim(),
+      content: content.trim(),
+      authorId: uid,
+      authorName: displayName || email,
+      category,
+      priority: priority || "normal",
+      attachments: finalAttachments,
+      targetAudience: targetAudience || "everyone",
+      clubId: clubId || null,
+      createdAt: now,
+      updatedAt: now
+    });
+
+    await docRef.set(notice.toFirestore());
+    return res.status(201).json({ notice: { id: docRef.id, ...notice.toFirestore() } });
+  } catch (error) {
+    console.error("Create notice error:", error);
+    return res.status(500).json({ error: error.message });
+  }
+};
+

@@ -4,7 +4,7 @@ import { sendOtpEmail } from "../services/emailService.js";
 import { User } from "../models/User.js";
 import { validateUser } from "../validators/userValidator.js";
 import { createSession, deleteSession } from "../middlewares/verifyToken.js";
-import cloudinary from "../db/cloudinary.js";
+import { uploadProfilePic } from "../utils/uploadProfilePic.js";
 
 // Firebase API Key from environment (should match your project)
 const FIREBASE_API_KEY = process.env.VITE_FIREBASE_API_KEY;
@@ -365,43 +365,21 @@ export const uploadProfilePicture = async (req, res) => {
   }
 
   try {
-    // 1. Upload the buffer to Cloudinary using a stream
-    const uploadStream = cloudinary.uploader.upload_stream(
-      {
-        folder: "campusconnect/profiles",
-        public_id: `user_${uid}`,
-        overwrite: true,
-        resource_type: "image",
-        transformation: [
-          { width: 400, height: 400, crop: "fill", gravity: "face" } // Auto-crop to square face
-        ]
-      },
-      async (error, result) => {
-        if (error) {
-          console.error("Cloudinary upload error:", error);
-          return res.status(500).json({ error: "Failed to upload image to Cloudinary." });
-        }
+    const photoURL = await uploadProfilePic(req.file.buffer, uid);
 
-        const photoURL = result.secure_url;
+    // 1. Update Firebase Auth photoURL
+    await admin.auth().updateUser(uid, { photoURL });
 
-        // 2. Update Firebase Auth photoURL
-        await admin.auth().updateUser(uid, { photoURL });
+    // 2. Update Firestore Users collection
+    await admin.firestore().collection("users").doc(uid).update({
+      photoURL,
+      updatedAt: new Date().toISOString()
+    });
 
-        // 3. Update Firestore Users collection
-        await admin.firestore().collection("users").doc(uid).update({
-          photoURL,
-          updatedAt: new Date().toISOString()
-        });
-
-        return res.status(200).json({
-          message: "Profile picture updated successfully.",
-          photoURL
-        });
-      }
-    );
-
-    // Write the buffer to the Cloudinary stream
-    uploadStream.end(req.file.buffer);
+    return res.status(200).json({
+      message: "Profile picture updated successfully.",
+      photoURL
+    });
 
   } catch (error) {
     console.error("Profile picture error:", error);
