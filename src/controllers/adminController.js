@@ -1,7 +1,7 @@
 import admin from "../db/firebase.js";
 import { Club } from "../models/Club.js";
 import { Notice } from "../models/Notice.js";
-import { uploadToCloudinary } from "../utils/uploadPdf.js";
+import { uploadToCloudinary, deleteFromCloudinary } from "../utils/uploadPdf.js";
 
 // ─── Get Student Count ─────────────────────────────────────────────────────────
 export const getStudentCount = async (req, res) => {
@@ -446,7 +446,37 @@ export const getNotices = async (req, res) => {
       .orderBy("createdAt", "desc")
       .get();
 
-    const notices = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const notices = [];
+    const userCache = new Map();      //For caching the user data
+
+    for (const doc of snapshot.docs) {
+      const data = doc.data();
+      let authorName = data.authorName || "Unknown";
+
+      if (data.authorId) {
+        if (userCache.has(data.authorId)) {
+          authorName = userCache.get(data.authorId);
+        } else {
+          const userDoc = await admin.firestore().collection("users").doc(data.authorId).get();
+          if (userDoc.exists) {
+            const userData = userDoc.data();
+            if (userData.displayName) {
+              authorName = userData.displayName;
+            } else if (userData.email) {
+              authorName = userData.email;
+            }
+          }
+          userCache.set(data.authorId, authorName);
+        }
+      }
+
+      notices.push({
+        id: doc.id,
+        ...data,
+        authorName
+      });
+    }
+
     return res.status(200).json({ notices });
   } catch (error) {
     console.error("Get notices error:", error);
@@ -464,17 +494,31 @@ export const createNotice = async (req, res) => {
       return res.status(400).json({ error: "title, content and category are required." });
     }
 
+    // Fetch user profile from Firestore to get the actual displayName
+    let authorName = displayName || email;
+    const userDoc = await admin.firestore().collection("users").doc(uid).get();
+    if (userDoc.exists) {
+      const userData = userDoc.data();
+      if (userData.displayName) {
+        authorName = userData.displayName;
+      }
+    }
+
     // Handle file upload to Cloudinary if provided
-    let finalAttachments = attachments || [];
+    let finalAttachments = [];
+    let attachmentName = null;
     if (req.file) {
       try {
         const cloudinaryUrl = await uploadToCloudinary(req.file.buffer, 'notices');
-        finalAttachments = [cloudinaryUrl]; // Store as array
+        finalAttachments = [cloudinaryUrl]; // Store as array of strings
+        attachmentName = req.file.originalname || null;
         console.log('[Admin] Notice PDF uploaded to Cloudinary:', cloudinaryUrl);
       } catch (uploadErr) {
         console.error('[Admin] Cloudinary upload failed:', uploadErr);
         // We continue with empty attachments if upload fails, or you could return an error
       }
+    } else if (attachments) {
+      finalAttachments = Array.isArray(attachments) ? attachments : [attachments];
     }
 
     const now = new Date().toISOString();
@@ -485,10 +529,11 @@ export const createNotice = async (req, res) => {
       title: title.trim(),
       content: content.trim(),
       authorId: uid,
-      authorName: displayName || email,
+      authorName: authorName,
       category,
       priority: priority || "normal",
       attachments: finalAttachments,
+      attachmentName: attachmentName,
       targetAudience: targetAudience || "everyone",
       clubId: clubId || null,
       createdAt: now,
@@ -503,3 +548,89 @@ export const createNotice = async (req, res) => {
   }
 };
 
+// ─── Update Notice ───────────────────────────────────────────────────────────
+export const updateNotice = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, content, category, priority, targetAudience, clubId, removeAttachment } = req.body;
+
+    const docRef = admin.firestore().collection("notices").doc(id);
+    const docSnap = await docRef.get();
+    if (!docSnap.exists) {
+      return res.status(404).json({ error: "Notice not found." });
+    }
+
+    const existing = docSnap.data();
+    let finalAttachments = existing.attachments || [];
+    let attachmentName = existing.attachmentName || null;
+
+    // If admin requests removal of existing attachment without replacement
+    if (removeAttachment === 'true' || removeAttachment === true) {
+      for (const url of finalAttachments) {
+        await deleteFromCloudinary(url);
+      }
+      finalAttachments = [];
+      attachmentName = null;
+    }
+
+    // If a new PDF file was uploaded, replace the existing one
+    if (req.file) {
+      // Delete old attachments from Cloudinary first
+      for (const url of finalAttachments) {
+        await deleteFromCloudinary(url);
+      }
+      const cloudinaryUrl = await uploadToCloudinary(req.file.buffer, 'notices');
+      finalAttachments = [cloudinaryUrl];
+      attachmentName = req.file.originalname || null;
+      console.log('[Admin] Notice PDF replaced in Cloudinary:', cloudinaryUrl);
+    }
+
+    const updatedFields = {
+      ...(title          && { title: title.trim() }),
+      ...(content        && { content: content.trim() }),
+      ...(category       && { category }),
+      ...(priority       && { priority }),
+      ...(targetAudience && { targetAudience }),
+      ...(clubId !== undefined && { clubId: clubId || null }),
+      attachments: finalAttachments,
+      attachmentName,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await docRef.update(updatedFields);
+
+    const updatedSnap = await docRef.get();
+    return res.status(200).json({ notice: { id, ...updatedSnap.data() } });
+  } catch (error) {
+    console.error("Update notice error:", error);
+    return res.status(500).json({ error: error.message });
+  }
+};
+
+// ─── Delete Notice ───────────────────────────────────────────────────────────
+export const deleteNotice = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const docRef = admin.firestore().collection("notices").doc(id);
+    const docSnap = await docRef.get();
+    if (!docSnap.exists) {
+      return res.status(404).json({ error: "Notice not found." });
+    }
+
+    const { attachments = [] } = docSnap.data();
+
+    // Delete all associated Cloudinary files first
+    for (const url of attachments) {
+      await deleteFromCloudinary(url);
+    }
+
+    // Delete the Firestore document
+    await docRef.delete();
+
+    return res.status(200).json({ message: "Notice deleted successfully.", id });
+  } catch (error) {
+    console.error("Delete notice error:", error);
+    return res.status(500).json({ error: error.message });
+  }
+};

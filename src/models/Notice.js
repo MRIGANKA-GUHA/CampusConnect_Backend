@@ -13,6 +13,7 @@ export class Notice {
     category,
     priority = "normal",
     attachments = [],
+    attachmentName = null,
     targetAudience = "everyone",
     clubId = null,
     createdAt = new Date().toISOString(),
@@ -26,6 +27,7 @@ export class Notice {
     this.category = category;
     this.priority = priority;
     this.attachments = attachments;
+    this.attachmentName = attachmentName;
     this.targetAudience = targetAudience;
     this.clubId = clubId;
     this.createdAt = createdAt;
@@ -46,6 +48,7 @@ export class Notice {
       category: this.category,
       priority: this.priority,
       attachments: this.attachments,
+      attachmentName: this.attachmentName,
       targetAudience: this.targetAudience,
       clubId: this.clubId,
       createdAt: this.createdAt,

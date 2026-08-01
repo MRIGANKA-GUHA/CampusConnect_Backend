@@ -15,7 +15,9 @@ import {
   deleteClub,
   getConvenors,
   getNotices,
-  createNotice
+  createNotice,
+  updateNotice,
+  deleteNotice
 } from "../controllers/adminController.js";
 import { verifyToken } from "../middlewares/verifyToken.js";
 import pdfUpload from "../middlewares/pdfUpload.js";
@@ -43,5 +45,7 @@ router.delete("/clubs/:id", verifyToken, deleteClub);
 // ─── Notices ───
 router.get("/notices", verifyToken, getNotices);
 router.post("/notices", verifyToken, pdfUpload.single('pdf'), createNotice);
+router.put("/notices/:id", verifyToken, pdfUpload.single('pdf'), updateNotice);
+router.delete("/notices/:id", verifyToken, deleteNotice);
 
 export default router;
