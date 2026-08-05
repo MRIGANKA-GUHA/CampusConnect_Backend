@@ -17,7 +17,9 @@ export class User {
     updatedAt = new Date().toISOString(),
     authProvider = "email-password",
     bookmarks = [],
-    metadata = {}
+    metadata = {},
+    phoneNo = "",
+    bio = ""
   }) {
     this.uid = uid;
     this.email = email;
@@ -34,6 +36,8 @@ export class User {
     this.authProvider = authProvider;
     this.bookmarks = bookmarks; // Array of bookmarked notice IDs
     this.metadata = metadata;
+    this.phoneNo = phoneNo;
+    this.bio = isAdmin ? "" : bio;
   }
 
   /**
@@ -54,7 +58,9 @@ export class User {
       updatedAt: this.updatedAt,
       authProvider: this.authProvider,
       bookmarks: this.bookmarks,
-      metadata: this.metadata
+      metadata: this.metadata,
+      phoneNo: this.phoneNo,
+      bio: this.bio
     };
   }
 
