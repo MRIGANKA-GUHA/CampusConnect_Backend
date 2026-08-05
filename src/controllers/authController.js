@@ -3,6 +3,7 @@ import axios from "axios";
 import { sendOtpEmail } from "../services/emailService.js";
 import { User } from "../models/User.js";
 import { validateUser } from "../validators/userValidator.js";
+import { validateProfile } from "../validators/profileValidator.js";
 import { createSession, deleteSession } from "../middlewares/verifyToken.js";
 import { uploadProfilePic } from "../utils/uploadProfilePic.js";
 
@@ -184,13 +185,13 @@ export const loginUser = async (req, res) => {
     });
   } catch (error) {
     const fbError = error.response?.data?.error?.message;
-    if (fbError === 'INVALID_PASSWORD' || fbError === 'EMAIL_NOT_FOUND') {
-      return res.status(401).json({ error: "Invalid email or password" });
+    if (fbError === 'INVALID_PASSWORD' || fbError === 'EMAIL_NOT_FOUND' || fbError === 'INVALID_LOGIN_CREDENTIALS') {
+      return res.status(401).json({ error: "Invalid email or password. Please check your credentials or register a new account." });
     }
     if (fbError === 'USER_DISABLED') {
       return res.status(403).json({ error: "Your account has been suspended. Please contact the administrator." });
     }
-    return res.status(401).json({ error: "Authentication failed" });
+    return res.status(401).json({ error: "Authentication failed. Please try again." });
   }
 };
 
@@ -317,6 +318,15 @@ export const updateProfile = async (req, res) => {
     const updatedRollNo = isAdmin ? "" : (rollNo || "");
     const updatedBio = isAdmin ? "" : (bio || "");
     const updatedDepartment = isAdmin ? "" : (department || "");
+
+    // Validate phoneNo and rollNo
+    const { isValid: profileValidStatus, error: profileErrorMsg } = validateProfile(
+      { phoneNo, rollNo: updatedRollNo },
+      userData.role
+    );
+    if (!profileValidStatus) {
+      return res.status(400).json({ error: profileErrorMsg });
+    }
 
     // 3. Validate data via userValidator before updating
     const { isValid: profileValid, errors: profileErrors } = validateUser({
