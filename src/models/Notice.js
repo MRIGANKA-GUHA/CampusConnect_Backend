@@ -65,7 +65,6 @@ export const NOTICE_PRIORITY = {
 };
 
 export const TARGET_AUDIENCE = {
-  EVERYONE: "everyone",
-  STUDENTS: "students",
-  CONVENORS: "convenors"
+  CLUBS: "clubs",
+  STUDENTS: "students"
 };

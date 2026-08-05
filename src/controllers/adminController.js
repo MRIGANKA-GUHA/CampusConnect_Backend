@@ -9,7 +9,7 @@ export const getStudentCount = async (req, res) => {
     const snapshot = await admin
       .firestore()
       .collection("users")
-      .where("role", "in", ["student", "convenor"])
+      .where("role", "==", "student")
       .count()
       .get();
 
@@ -26,7 +26,7 @@ export const getStudents = async (req, res) => {
     const snapshot = await admin
       .firestore()
       .collection("users")
-      .where("role", "in", ["student", "convenor"])
+      .where("role", "==", "student")
       .get();
 
     const students = [];
@@ -82,7 +82,7 @@ export const updateUserRole = async (req, res) => {
   const { id } = req.params;
   const { role } = req.body;
 
-  if (!role || !["student", "admin", "convenor"].includes(role)) {
+  if (!role || !["student", "admin"].includes(role)) {
     return res.status(400).json({ error: "Invalid role specified." });
   }
 
@@ -215,10 +215,10 @@ export const getPublicStats = async (req, res) => {
       .count()
       .get();
 
-    // 3. Member Count (Students + Convenors)
+    // 3. Member Count (Students)
     const membersSnapshot = await firestore
       .collection("users")
-      .where("role", "in", ["student", "convenor"])
+      .where("role", "==", "student")
       .count()
       .get();
 
@@ -399,7 +399,7 @@ export const deleteClub = async (req, res) => {
   }
 };
 
-// ─── Get All Convenors List ───────────────────────────────────────────────────
+// ─── Get All Students (for club convenor assignment) ─────────────────────────
 export const getConvenors = async (req, res) => {
   try {
     // 1. Fetch all clubs to get already-assigned convenor IDs
@@ -410,11 +410,11 @@ export const getConvenors = async (req, res) => {
       if (data.convenorId) assignedConvenorIds.add(data.convenorId);
     });
 
-    // 2. Fetch all convenor-role users
+    // 2. Fetch all students (any student can be assigned as a convenor)
     const snapshot = await admin
       .firestore()
       .collection("users")
-      .where("role", "==", "convenor")
+      .where("role", "==", "student")
       .get();
 
     const convenors = [];
@@ -433,7 +433,7 @@ export const getConvenors = async (req, res) => {
 
     return res.status(200).json({ convenors });
   } catch (error) {
-    console.error("Get convenors error:", error);
+    console.error("Get students (convenor assignment) error:", error);
     return res.status(500).json({ error: error.message });
   }
 };

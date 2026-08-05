@@ -16,6 +16,7 @@ export class User {
     createdAt = new Date().toISOString(),
     updatedAt = new Date().toISOString(),
     authProvider = "email-password",
+    bookmarks = [],
     metadata = {}
   }) {
     this.uid = uid;
@@ -31,6 +32,7 @@ export class User {
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;
     this.authProvider = authProvider;
+    this.bookmarks = bookmarks; // Array of bookmarked notice IDs
     this.metadata = metadata;
   }
 
@@ -51,6 +53,7 @@ export class User {
       createdAt: this.createdAt,
       updatedAt: this.updatedAt,
       authProvider: this.authProvider,
+      bookmarks: this.bookmarks,
       metadata: this.metadata
     };
   }
@@ -59,6 +62,5 @@ export class User {
 
 export const USER_ROLES = {
   STUDENT: "student",
-  ADMIN: "admin",
-  CONVENOR: "convenor"
+  ADMIN: "admin"
 };

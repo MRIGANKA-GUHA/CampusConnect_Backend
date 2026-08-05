@@ -4,7 +4,7 @@
  */
 
 const VALID_PRIORITIES = ["low", "normal", "high", "urgent"];
-const VALID_AUDIENCES = ["everyone", "students", "convenors"];
+const VALID_AUDIENCES = ["clubs", "students"];
 const VALID_CATEGORIES = ["Academic", "Events", "Holiday", "Urgent", "General", "Club"];
 
 /**

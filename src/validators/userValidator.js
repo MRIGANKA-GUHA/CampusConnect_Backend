@@ -4,7 +4,7 @@
  * Kept separate from the User model to follow separation of concerns.
  */
 
-const VALID_ROLES = ["student", "admin", "convenor"];
+const VALID_ROLES = ["student", "admin"];
 
 /**
  * Validates a user payload against the CampusConnect user schema rules.
