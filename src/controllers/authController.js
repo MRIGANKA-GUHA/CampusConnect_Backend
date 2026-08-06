@@ -161,6 +161,25 @@ export const loginUser = async (req, res) => {
     const userDoc = await admin.firestore().collection("users").doc(localId).get();
     const userData = userDoc.exists ? userDoc.data() : {};
 
+    // Block login if the account belongs to a restricted club
+    if (userData.role === 'club') {
+      const clubSnap = await admin.firestore()
+        .collection("clubs")
+        .where("clubAuthUid", "==", localId)
+        .limit(1)
+        .get();
+
+      if (!clubSnap.empty) {
+        const clubData = clubSnap.docs[0].data();
+        if (clubData.status === 'restricted' || clubData.status === 'inactive') {
+          return res.status(403).json({ error: "Your club account has been restricted by the Administrator. Access denied." });
+        }
+        if (clubData.logoURL) {
+          userData.photoURL = clubData.logoURL;
+        }
+      }
+    }
+
     // Create a custom token for this user
     const customToken = await admin.auth().createCustomToken(localId);
 
@@ -179,8 +198,10 @@ export const loginUser = async (req, res) => {
         ...safeUser,
         uid: localId,
         email: userAuth.email,
-        displayName: userAuth.displayName,
-        photoURL: userAuth.photoURL || safeUser.photoURL
+        displayName: userAuth.displayName || safeUser.displayName,
+        photoURL: userData.role === 'club'
+          ? (userData.photoURL || userAuth.photoURL || "")
+          : (userAuth.photoURL || safeUser.photoURL || ""),
       },
     });
   } catch (error) {
@@ -268,12 +289,35 @@ export const getProfile = async (req, res) => {
     const userDoc = await admin.firestore().collection("users").doc(req.user.uid).get();
     const userData = userDoc.exists ? userDoc.data() : {};
 
+    if (userData.role === 'club') {
+      const clubSnap = await admin.firestore()
+        .collection("clubs")
+        .where("clubAuthUid", "==", req.user.uid)
+        .limit(1)
+        .get();
+
+      if (!clubSnap.empty) {
+        const clubData = clubSnap.docs[0].data();
+        if (clubData.status === 'restricted' || clubData.status === 'inactive') {
+          return res.status(403).json({ error: "Your club account has been restricted by the Administrator." });
+        }
+        if (clubData.logoURL) {
+          userData.photoURL = clubData.logoURL;
+        }
+      }
+    }
+
     return res.status(200).json({
       uid: userAuth.uid,
       email: userAuth.email,
-      displayName: userAuth.displayName,
-      photoURL: userAuth.photoURL,
-      ...userData
+      displayName: userAuth.displayName || userData.displayName || "",
+      photoURL: userAuth.photoURL || userData.photoURL || "",
+      ...userData,
+      // Always override with Firebase Auth photoURL as final source of truth for non-club users
+      // (upload endpoint writes to Firebase Auth, so this stays in sync)
+      photoURL: userData.role === 'club'
+        ? (userData.photoURL || userAuth.photoURL || "")
+        : (userAuth.photoURL || userData.photoURL || ""),
     });
   } catch (error) {
     return res.status(500).json({ error: error.message });

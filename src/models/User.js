@@ -17,6 +17,7 @@ export class User {
     updatedAt = new Date().toISOString(),
     authProvider = "email-password",
     bookmarks = [],
+    joinedClubs = [],   
     metadata = {},
     phoneNo = "",
     bio = ""
@@ -27,17 +28,19 @@ export class User {
     this.role = role;
     // rollNo and department are only meaningful for non-admin roles
     const isAdmin = role === "admin";
-    this.rollNo = isAdmin ? "" : rollNo;
-    this.department = isAdmin ? "" : department;
+    const isClub  = role === "club";
+    this.rollNo = (isAdmin || isClub) ? "" : rollNo;
+    this.department = (isAdmin || isClub) ? "" : department;
     this.photoURL = photoURL;
     this.isVerified = isVerified;
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;
     this.authProvider = authProvider;
-    this.bookmarks = bookmarks; // Array of bookmarked notice IDs
+    this.bookmarks = bookmarks;      
+    this.joinedClubs = (isAdmin || isClub) ? [] : joinedClubs;
     this.metadata = metadata;
     this.phoneNo = phoneNo;
-    this.bio = isAdmin ? "" : bio;
+    this.bio = (isAdmin || isClub) ? "" : bio;
   }
 
   /**
@@ -58,6 +61,7 @@ export class User {
       updatedAt: this.updatedAt,
       authProvider: this.authProvider,
       bookmarks: this.bookmarks,
+      joinedClubs: this.joinedClubs,
       metadata: this.metadata,
       phoneNo: this.phoneNo,
       bio: this.bio
@@ -68,5 +72,6 @@ export class User {
 
 export const USER_ROLES = {
   STUDENT: "student",
-  ADMIN: "admin"
+  ADMIN: "admin",
+  CLUB: "club"
 };

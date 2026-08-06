@@ -30,7 +30,15 @@ export const verifyToken = async (req, res, next) => {
 
   try {
     const decodedToken = await admin.auth().verifyIdToken(token);
-    req.user = decodedToken;
+
+    // ── Enrich req.user with Firestore role ──────────────────────────────────
+    // The Firebase ID token does not contain the Firestore role.
+    // We fetch it here so role-guarding middlewares (e.g. isClub) can use it.
+    const userDoc = await admin.firestore().collection("users").doc(decodedToken.uid).get();
+    req.user = {
+      ...decodedToken,
+      role: userDoc.exists ? (userDoc.data().role || "student") : "student"
+    };
 
     // ── Check backend session ────────────────────────────────────────────────
     const sessionDoc = await admin

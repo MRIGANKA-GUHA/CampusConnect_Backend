@@ -3,6 +3,7 @@ import cors from "cors";
 import authRoutes from "./routes/authRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import studentRoutes from "./routes/studentRoutes.js";
+import clubRoutes from "./routes/clubRoutes.js";
 import aiRoutes from "./routes/aiRoutes.js";
 
 const app = express();
@@ -29,6 +30,7 @@ app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/student", studentRoutes);
+app.use("/api/club", clubRoutes);
 app.use("/api/ai", aiRoutes);
 
 // Health check

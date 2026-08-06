@@ -1,6 +1,9 @@
 /**
  * Event Schema / Model Representation
  * This defines the standard structure for an event in CampusConnect.
+ * Designed to be extensible: the `options` object is a free-form map for
+ * future per-event configuration (e.g. team size, payment gateway, custom
+ * registration fields, QR check-in, etc.) without requiring a schema migration.
  */
 
 export class Event {
@@ -12,14 +15,16 @@ export class Event {
     time,
     venue,
     organizerId,
+    clubId = null,
+    clubName = "",
     category,
     status = "draft",
     bannerURL = "",
-    clubName = "",
     capacity = null,
     attendees = [],
     price = 0,
     registrationDeadline = "",
+    options = {},
     createdAt = new Date().toISOString(),
     updatedAt = new Date().toISOString()
   }) {
@@ -30,14 +35,16 @@ export class Event {
     this.time = time;
     this.venue = venue;
     this.organizerId = organizerId;
+    this.clubId = clubId;
+    this.clubName = clubName;
     this.category = category;
     this.status = status;
     this.bannerURL = bannerURL;
-    this.clubName = clubName;
     this.capacity = capacity;
     this.attendees = attendees;
     this.price = price;
     this.registrationDeadline = registrationDeadline;
+    this.options = options;
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;
   }
@@ -55,14 +62,16 @@ export class Event {
       time: this.time,
       venue: this.venue,
       organizerId: this.organizerId,
+      clubId: this.clubId,
+      clubName: this.clubName,
       category: this.category,
       status: this.status,
       bannerURL: this.bannerURL,
-      clubName: this.clubName,
       capacity: this.capacity,
       attendees: this.attendees,
       price: this.price,
       registrationDeadline: this.registrationDeadline,
+      options: this.options,
       createdAt: this.createdAt,
       updatedAt: this.updatedAt
     };

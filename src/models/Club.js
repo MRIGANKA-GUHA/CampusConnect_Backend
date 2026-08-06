@@ -40,8 +40,8 @@ export class Club {
       website: socialLinks.website || "",
     };
     this.metadata = metadata;
-    this.members = members;
-    this.events = events;
+    this.members = members;   
+    this.events = events;     
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;
   }
