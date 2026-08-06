@@ -145,10 +145,12 @@ export const getClubEvents = async (req, res) => {
     const snapshot = await admin.firestore()
       .collection("events")
       .where("clubId", "==", club.id)
-      .orderBy("createdAt", "desc")
       .get();
 
     const events = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    // Sort in memory to avoid requiring a composite index in Firestore
+    events.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    
     return res.status(200).json({ events });
   } catch (error) {
     console.error("getClubEvents error:", error);
@@ -165,6 +167,7 @@ export const createClubEvent = async (req, res) => {
     const {
       title, description, date, time, venue,
       category, capacity, price, registrationDeadline,
+      status,
       options   // extensible future options object
     } = req.body;
 
@@ -186,7 +189,7 @@ export const createClubEvent = async (req, res) => {
       clubId: club.id,
       clubName: club.name,
       category: category || "Other",
-      status: EVENT_STATUS.DRAFT,
+      status: Object.values(EVENT_STATUS).includes(status) ? status : EVENT_STATUS.DRAFT,
       bannerURL: "",
       capacity: capacity ? Number(capacity) : null,
       attendees: [],
@@ -287,6 +290,66 @@ export const deleteClubEvent = async (req, res) => {
   }
 };
 
+// ─── Upload Event Banner Image ────────────────────────────────────────────────
+export const uploadEventBanner = async (req, res) => {
+  try {
+    const club = await getClubByAuthUid(req.user.uid);
+    if (!club) return res.status(404).json({ error: "Club not found." });
+    if (!req.file) return res.status(400).json({ error: "No image file provided." });
+
+    const { id } = req.params;
+    const eventRef = admin.firestore().collection("events").doc(id);
+    const eventDoc = await eventRef.get();
+
+    if (!eventDoc.exists) return res.status(404).json({ error: "Event not found." });
+    if (eventDoc.data().clubId !== club.id) {
+      return res.status(403).json({ error: "You can only edit your own club's events." });
+    }
+
+    // Delete old banner if present
+    const oldBannerURL = eventDoc.data().bannerURL;
+    if (oldBannerURL) await deleteFromCloudinary(oldBannerURL);
+
+    const bannerURL = await uploadToCloudinary(req.file.buffer, "event_banners");
+    await eventRef.update({ bannerURL, updatedAt: new Date().toISOString() });
+
+    return res.status(200).json({ message: "Event banner uploaded.", bannerURL });
+  } catch (error) {
+    console.error("uploadEventBanner error:", error);
+    return res.status(500).json({ error: error.message });
+  }
+};
+
+// ─── Upload Event PDF ─────────────────────────────────────────────────────────
+export const uploadEventPdf = async (req, res) => {
+  try {
+    const club = await getClubByAuthUid(req.user.uid);
+    if (!club) return res.status(404).json({ error: "Club not found." });
+    if (!req.file) return res.status(400).json({ error: "No PDF file provided." });
+
+    const { id } = req.params;
+    const eventRef = admin.firestore().collection("events").doc(id);
+    const eventDoc = await eventRef.get();
+
+    if (!eventDoc.exists) return res.status(404).json({ error: "Event not found." });
+    if (eventDoc.data().clubId !== club.id) {
+      return res.status(403).json({ error: "You can only edit your own club's events." });
+    }
+
+    // Delete old PDF if present
+    const oldPdfURL = eventDoc.data().pdfURL;
+    if (oldPdfURL) await deleteFromCloudinary(oldPdfURL);
+
+    const pdfURL = await uploadToCloudinary(req.file.buffer, "event_pdfs");
+    await eventRef.update({ pdfURL, updatedAt: new Date().toISOString() });
+
+    return res.status(200).json({ message: "Event PDF uploaded.", pdfURL });
+  } catch (error) {
+    console.error("uploadEventPdf error:", error);
+    return res.status(500).json({ error: error.message });
+  }
+};
+
 // ─── Get Club Members ─────────────────────────────────────────────────────────
 // Fetches full user profiles for all UIDs stored in club.members[]
 export const getClubMembers = async (req, res) => {
@@ -337,10 +400,12 @@ export const getClubNotices = async (req, res) => {
     const snapshot = await admin.firestore()
       .collection("notices")
       .where("clubId", "==", club.id)
-      .orderBy("createdAt", "desc")
       .get();
 
     const notices = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    // Sort in memory to avoid requiring a composite index in Firestore
+    notices.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    
     return res.status(200).json({ notices });
   } catch (error) {
     console.error("getClubNotices error:", error);

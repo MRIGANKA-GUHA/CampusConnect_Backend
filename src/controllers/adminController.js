@@ -239,8 +239,6 @@ export const getPublicEvents = async (req, res) => {
     const eventsSnapshot = await admin.firestore()
       .collection("events")
       .where("status", "in", ["published", "completed"])
-      .orderBy("date", "asc")
-      .limit(6)
       .get();
 
     const events = [];
@@ -248,7 +246,13 @@ export const getPublicEvents = async (req, res) => {
       events.push({ id: doc.id, ...doc.data() });
     });
 
-    return res.status(200).json({ events });
+    // Sort in memory to avoid composite index requirement
+    events.sort((a, b) => new Date(a.date) - new Date(b.date));
+    
+    // Limit to 6
+    const topEvents = events.slice(0, 6);
+
+    return res.status(200).json({ events: topEvents });
   } catch (error) {
     console.error("Public events error:", error);
     return res.status(500).json({ error: error.message });

@@ -8,6 +8,8 @@ import {
   createClubEvent,
   updateClubEvent,
   deleteClubEvent,
+  uploadEventBanner,
+  uploadEventPdf,
   getClubMembers,
   getClubNotices,
   postClubNotice,
@@ -37,6 +39,8 @@ router.get("/events", verifyToken, isClub, getClubEvents);
 router.post("/events", verifyToken, isClub, createClubEvent);
 router.put("/events/:id", verifyToken, isClub, updateClubEvent);
 router.delete("/events/:id", verifyToken, isClub, deleteClubEvent);
+router.post("/events/:id/banner", verifyToken, isClub, upload.single("image"), uploadEventBanner);
+router.post("/events/:id/pdf", verifyToken, isClub, pdfUpload.single("pdf"), uploadEventPdf);
 
 // ─── Members ───
 router.get("/members", verifyToken, isClub, getClubMembers);
