@@ -1,6 +1,8 @@
 import express from "express";
 import { 
-  getStudentCount, 
+  getDashboardStats,
+  getAllEvents,
+  updateEventStatus,
   getStudents, 
   deleteUser, 
   updateUserRole, 
@@ -25,13 +27,17 @@ import pdfUpload from "../middlewares/pdfUpload.js";
 const router = express.Router();
 
 // ─── User Management ───
-router.get("/stats/students", verifyToken, getStudentCount);
+router.get("/stats/dashboard", verifyToken, getDashboardStats);
 router.get("/students", verifyToken, getStudents);
 router.delete("/students/:id", verifyToken, deleteUser);
 router.patch("/students/:id/role", verifyToken, updateUserRole);
 router.patch("/students/:id/verify", verifyToken, toggleVerification);
 router.patch("/students/:id/status", verifyToken, toggleUserStatus);
 router.get("/convenors", verifyToken, getConvenors);
+
+// ─── Admin Event Management ───
+router.get("/events", verifyToken, getAllEvents);
+router.patch("/events/:id/status", verifyToken, updateEventStatus);
 
 // ─── Club Management ───
 router.get("/clubs/public", getPublicClubs);  // No auth — for landing page

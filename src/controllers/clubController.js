@@ -189,7 +189,8 @@ export const createClubEvent = async (req, res) => {
       clubId: club.id,
       clubName: club.name,
       category: category || "Other",
-      status: Object.values(EVENT_STATUS).includes(status) ? status : EVENT_STATUS.DRAFT,
+      // Clubs can only save events as draft, pending (under review), or cancelled — admins publish them
+      status: [EVENT_STATUS.DRAFT, EVENT_STATUS.PENDING, EVENT_STATUS.CANCELLED].includes(status) ? status : EVENT_STATUS.DRAFT,
       bannerURL: "",
       capacity: capacity ? Number(capacity) : null,
       attendees: [],
@@ -246,7 +247,12 @@ export const updateClubEvent = async (req, res) => {
       ...(capacity            !== undefined && { capacity: capacity ? Number(capacity) : null }),
       ...(price               !== undefined && { price: price ? Number(price) : 0 }),
       ...(registrationDeadline !== undefined && { registrationDeadline }),
-      ...(status              !== undefined && { status }),
+      ...(status !== undefined && (() => {
+        // Clubs can only move events between draft, pending (under review), or cancelled
+        const CLUB_ALLOWED_STATUSES = [EVENT_STATUS.DRAFT, EVENT_STATUS.PENDING, EVENT_STATUS.CANCELLED];
+        if (!CLUB_ALLOWED_STATUSES.includes(status)) return {};
+        return { status };
+      })()),
       ...(options             !== undefined && { options }),
       updatedAt: new Date().toISOString()
     };

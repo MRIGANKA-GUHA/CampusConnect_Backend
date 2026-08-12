@@ -83,6 +83,7 @@ export class Event {
 
 export const EVENT_STATUS = {
   DRAFT: "draft",
+  PENDING: "pending",
   PUBLISHED: "published",
   COMPLETED: "completed",
   CANCELLED: "cancelled"

@@ -3,19 +3,86 @@ import { Club } from "../models/Club.js";
 import { Notice } from "../models/Notice.js";
 import { uploadToCloudinary, deleteFromCloudinary } from "../utils/uploadPdf.js";
 
-// ─── Get Student Count ─────────────────────────────────────────────────────────
-export const getStudentCount = async (req, res) => {
-  try {
-    const snapshot = await admin
-      .firestore()
-      .collection("users")
-      .where("role", "==", "student")
-      .count()
-      .get();
 
-    return res.status(200).json({ count: snapshot.data().count });
+
+// ─── Get Admin Dashboard Stats ────────────────────────────────────────────────
+export const getDashboardStats = async (req, res) => {
+  try {
+    const firestore = admin.firestore();
+
+    const studentsSnap = await firestore.collection("users").where("role", "==", "student").count().get();
+    const eventsSnap = await firestore.collection("events").where("status", "in", ["published"]).count().get();
+    const pendingClubsSnap = await firestore.collection("clubs").where("status", "==", "pending").count().get();
+    const clubsSnap = await firestore.collection("clubs").count().get();
+
+    return res.status(200).json({
+      totalStudents: studentsSnap.data().count,
+      activeEvents: eventsSnap.data().count,
+      pendingApprovals: pendingClubsSnap.data().count,
+      totalClubs: clubsSnap.data().count
+    });
   } catch (error) {
-    console.error("Admin stats error:", error);
+    console.error("Admin dashboard stats error:", error);
+    return res.status(500).json({ error: error.message });
+  }
+};
+
+// ─── Get All Events (Admin) ─────────────────────────────────────────────────────
+export const getAllEvents = async (req, res) => {
+  try {
+    const firestore = admin.firestore();
+    const snapshot = await firestore.collection("events").get();
+    const today = new Date().toISOString().split("T")[0]; // "YYYY-MM-DD"
+
+    const events = [];
+    const autoCompleteBatch = firestore.batch();
+    let hasAutoCompletes = false;
+
+    snapshot.docs.forEach(doc => {
+      const data = { id: doc.id, ...doc.data() };
+
+      // Auto-complete: if event is published and its date has passed, mark as completed
+      if (data.status === "published" && data.date && data.date < today) {
+        data.status = "completed";
+        autoCompleteBatch.update(doc.ref, { status: "completed", updatedAt: new Date().toISOString() });
+        hasAutoCompletes = true;
+      }
+
+      events.push(data);
+    });
+
+    // Commit auto-complete updates in a single batch
+    if (hasAutoCompletes) await autoCompleteBatch.commit();
+
+    // Sort newest first in memory
+    events.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    return res.status(200).json({ events });
+  } catch (error) {
+    console.error("Admin getAllEvents error:", error);
+    return res.status(500).json({ error: error.message });
+  }
+};
+
+
+// ─── Update Event Status (Admin Approve/Reject) ───────────────────────────────
+export const updateEventStatus = async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+
+  const VALID_STATUSES = ["draft", "pending", "published", "completed", "cancelled"];
+  if (!status || !VALID_STATUSES.includes(status)) {
+    return res.status(400).json({ error: `Invalid status. Must be one of: ${VALID_STATUSES.join(", ")}.` });
+  }
+
+  try {
+    const eventRef = admin.firestore().collection("events").doc(id);
+    const eventDoc = await eventRef.get();
+    if (!eventDoc.exists) return res.status(404).json({ error: "Event not found." });
+
+    await eventRef.update({ status, updatedAt: new Date().toISOString() });
+    return res.status(200).json({ message: `Event status updated to '${status}'.`, id, status });
+  } catch (error) {
+    console.error("Admin updateEventStatus error:", error);
     return res.status(500).json({ error: error.message });
   }
 };
