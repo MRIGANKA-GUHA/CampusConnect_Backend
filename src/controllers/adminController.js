@@ -12,13 +12,13 @@ export const getDashboardStats = async (req, res) => {
 
     const studentsSnap = await firestore.collection("users").where("role", "==", "student").count().get();
     const eventsSnap = await firestore.collection("events").where("status", "in", ["published"]).count().get();
-    const pendingClubsSnap = await firestore.collection("clubs").where("status", "==", "pending").count().get();
+    const pendingEventsSnap = await firestore.collection("events").where("status", "==", "pending").count().get();
     const clubsSnap = await firestore.collection("clubs").count().get();
 
     return res.status(200).json({
       totalStudents: studentsSnap.data().count,
       activeEvents: eventsSnap.data().count,
-      pendingApprovals: pendingClubsSnap.data().count,
+      pendingApprovals: pendingEventsSnap.data().count,
       totalClubs: clubsSnap.data().count
     });
   } catch (error) {
@@ -309,9 +309,23 @@ export const getPublicEvents = async (req, res) => {
       .get();
 
     const events = [];
+    const today = new Date().toISOString().split("T")[0];
+    const autoCompleteBatch = admin.firestore().batch();
+    let hasAutoCompletes = false;
+
     eventsSnapshot.forEach(doc => {
-      events.push({ id: doc.id, ...doc.data() });
+      const data = { id: doc.id, ...doc.data() };
+      
+      if (data.status === "published" && data.date && data.date < today) {
+        data.status = "completed";
+        autoCompleteBatch.update(doc.ref, { status: "completed", updatedAt: new Date().toISOString() });
+        hasAutoCompletes = true;
+      }
+      
+      events.push(data);
     });
+
+    if (hasAutoCompletes) await autoCompleteBatch.commit();
 
     // Sort in memory to avoid composite index requirement
     events.sort((a, b) => new Date(a.date) - new Date(b.date));

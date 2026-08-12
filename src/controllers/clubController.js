@@ -18,6 +18,39 @@ const getClubByAuthUid = async (clubAuthUid) => {
   return { id: doc.id, ...doc.data() };
 };
 
+// ─── Helper: Parse "10:30 AM" / "2:00 PM" → total minutes since midnight ──────
+const parseTimeToMinutes = (timeStr) => {
+  if (!timeStr) return null;
+  const match = timeStr.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (!match) return null;
+  let [, h, m, ampm] = match;
+  h = parseInt(h, 10);
+  m = parseInt(m, 10);
+  if (ampm.toUpperCase() === 'PM' && h !== 12) h += 12;
+  if (ampm.toUpperCase() === 'AM' && h === 12) h = 0;
+  return h * 60 + m;
+};
+
+// ─── Helper: Validate event datetime is not in the past ───────────────────────
+const validateEventDatetime = (date, time) => {
+  const now = new Date();
+  const todayStr = now.toISOString().split("T")[0];
+
+  if (date < todayStr) return "Event date cannot be in the past.";
+
+  if (date === todayStr && time) {
+    const eventMinutes = parseTimeToMinutes(time);
+    if (eventMinutes !== null) {
+      const nowMinutes = now.getHours() * 60 + now.getMinutes();
+      if (eventMinutes <= nowMinutes) {
+        return "Event time cannot be in the past for today's date.";
+      }
+    }
+  }
+
+  return null;
+};
+
 // ─── Get Club Profile ─────────────────────────────────────────────────────────
 export const getClubProfile = async (req, res) => {
   try {
@@ -63,12 +96,12 @@ export const updateClubProfile = async (req, res) => {
 
     const updates = {
       ...(description !== undefined && { description }),
-      ...(tagline     !== undefined && { tagline }),
+      ...(tagline !== undefined && { tagline }),
       ...(socialLinks !== undefined && {
         socialLinks: {
           instagram: socialLinks.instagram || "",
-          linkedin:  socialLinks.linkedin  || "",
-          website:   socialLinks.website   || "",
+          linkedin: socialLinks.linkedin || "",
+          website: socialLinks.website || "",
         }
       }),
       updatedAt: new Date().toISOString()
@@ -105,7 +138,7 @@ export const uploadClubLogo = async (req, res) => {
     });
     try {
       await admin.auth().updateUser(req.user.uid, { photoURL: logoURL });
-    } catch (_) {}
+    } catch (_) { }
 
     return res.status(200).json({ message: "Club logo updated.", logoURL });
   } catch (error) {
@@ -147,10 +180,27 @@ export const getClubEvents = async (req, res) => {
       .where("clubId", "==", club.id)
       .get();
 
-    const events = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const today = new Date().toISOString().split("T")[0];
+    const events = [];
+    const autoCompleteBatch = admin.firestore().batch();
+    let hasAutoCompletes = false;
+
+    snapshot.docs.forEach(doc => {
+      const data = { id: doc.id, ...doc.data() };
+
+      if (data.status === "published" && data.date && data.date < today) {
+        data.status = "completed";
+        autoCompleteBatch.update(doc.ref, { status: "completed", updatedAt: new Date().toISOString() });
+        hasAutoCompletes = true;
+      }
+
+      events.push(data);
+    });
+
+    if (hasAutoCompletes) await autoCompleteBatch.commit();
     // Sort in memory to avoid requiring a composite index in Firestore
     events.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    
+
     return res.status(200).json({ events });
   } catch (error) {
     console.error("getClubEvents error:", error);
@@ -174,6 +224,9 @@ export const createClubEvent = async (req, res) => {
     if (!title || !date || !venue) {
       return res.status(400).json({ error: "Title, date and venue are required." });
     }
+
+    const datetimeError = validateEventDatetime(date, time);
+    if (datetimeError) return res.status(400).json({ error: datetimeError });
 
     const docRef = admin.firestore().collection("events").doc();
     const now = new Date().toISOString();
@@ -237,15 +290,22 @@ export const updateClubEvent = async (req, res) => {
       category, capacity, price, registrationDeadline, status, options
     } = req.body;
 
+    if (date !== undefined || time !== undefined) {
+      const checkDate = date ?? eventDoc.data().date;
+      const checkTime = time ?? eventDoc.data().time;
+      const datetimeError = validateEventDatetime(checkDate, checkTime);
+      if (datetimeError) return res.status(400).json({ error: datetimeError });
+    }
+
     const updates = {
-      ...(title                !== undefined && { title: title.trim() }),
-      ...(description         !== undefined && { description }),
-      ...(date                !== undefined && { date }),
-      ...(time                !== undefined && { time }),
-      ...(venue               !== undefined && { venue: venue.trim() }),
-      ...(category            !== undefined && { category }),
-      ...(capacity            !== undefined && { capacity: capacity ? Number(capacity) : null }),
-      ...(price               !== undefined && { price: price ? Number(price) : 0 }),
+      ...(title !== undefined && { title: title.trim() }),
+      ...(description !== undefined && { description }),
+      ...(date !== undefined && { date }),
+      ...(time !== undefined && { time }),
+      ...(venue !== undefined && { venue: venue.trim() }),
+      ...(category !== undefined && { category }),
+      ...(capacity !== undefined && { capacity: capacity ? Number(capacity) : null }),
+      ...(price !== undefined && { price: price ? Number(price) : 0 }),
       ...(registrationDeadline !== undefined && { registrationDeadline }),
       ...(status !== undefined && (() => {
         // Clubs can only move events between draft, pending (under review), or cancelled
@@ -253,7 +313,7 @@ export const updateClubEvent = async (req, res) => {
         if (!CLUB_ALLOWED_STATUSES.includes(status)) return {};
         return { status };
       })()),
-      ...(options             !== undefined && { options }),
+      ...(options !== undefined && { options }),
       updatedAt: new Date().toISOString()
     };
 
@@ -411,7 +471,7 @@ export const getClubNotices = async (req, res) => {
     const notices = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     // Sort in memory to avoid requiring a composite index in Firestore
     notices.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    
+
     return res.status(200).json({ notices });
   } catch (error) {
     console.error("getClubNotices error:", error);
