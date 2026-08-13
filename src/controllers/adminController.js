@@ -305,7 +305,7 @@ export const getPublicEvents = async (req, res) => {
   try {
     const eventsSnapshot = await admin.firestore()
       .collection("events")
-      .where("status", "in", ["published", "completed"])
+      .where("status", "==", "published")
       .get();
 
     const events = [];
@@ -322,7 +322,9 @@ export const getPublicEvents = async (req, res) => {
         hasAutoCompletes = true;
       }
       
-      events.push(data);
+      if (data.status === "published") {
+        events.push(data);
+      }
     });
 
     if (hasAutoCompletes) await autoCompleteBatch.commit();

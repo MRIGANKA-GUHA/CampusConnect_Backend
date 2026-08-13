@@ -407,9 +407,10 @@ export const uploadEventPdf = async (req, res) => {
     if (oldPdfURL) await deleteFromCloudinary(oldPdfURL);
 
     const pdfURL = await uploadToCloudinary(req.file.buffer, "event_pdfs");
-    await eventRef.update({ pdfURL, updatedAt: new Date().toISOString() });
+    const pdfName = req.file.originalname || null;
+    await eventRef.update({ pdfURL, pdfName, updatedAt: new Date().toISOString() });
 
-    return res.status(200).json({ message: "Event PDF uploaded.", pdfURL });
+    return res.status(200).json({ message: "Event PDF uploaded.", pdfURL, pdfName });
   } catch (error) {
     console.error("uploadEventPdf error:", error);
     return res.status(500).json({ error: error.message });

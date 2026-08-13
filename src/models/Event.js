@@ -21,6 +21,7 @@ export class Event {
     status = "draft",
     bannerURL = "",
     pdfURL = "",
+    pdfName = null,
     capacity = null,
     attendees = [],
     price = 0,
@@ -42,6 +43,7 @@ export class Event {
     this.status = status;
     this.bannerURL = bannerURL;
     this.pdfURL = pdfURL;
+    this.pdfName = pdfName;
     this.capacity = capacity;
     this.attendees = attendees;
     this.price = price;
@@ -70,6 +72,7 @@ export class Event {
       status: this.status,
       bannerURL: this.bannerURL,
       pdfURL: this.pdfURL,
+      pdfName: this.pdfName,
       capacity: this.capacity,
       attendees: this.attendees,
       price: this.price,
