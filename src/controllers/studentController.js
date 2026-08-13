@@ -1,5 +1,47 @@
 import admin from "../db/firebase.js";
 
+// ─── GET /api/student/stats ──────────────────────────────────────────────────
+export const getStudentStats = async (req, res) => {
+  const uid = req.user.uid;
+  try {
+    const userDoc = await admin.firestore().collection("users").doc(uid).get();
+    const userData = userDoc.data() || {};
+    const bookmarksCount = (userData.bookmarks || []).length;
+    const clubsJoinedCount = (userData.joinedClubs || []).length;
+
+    const eventsSnapshot = await admin.firestore().collection("events").where("attendees", "array-contains", uid).get();
+    
+    let eventsJoinedCount = 0;
+    let upcomingEventsCount = 0;
+    const now = new Date();
+    // Reset time to start of day for comparison
+    now.setHours(0,0,0,0);
+
+    eventsSnapshot.forEach(doc => {
+      eventsJoinedCount++;
+      const data = doc.data();
+      if (data.date) {
+        const eventDate = new Date(data.date);
+        if (eventDate >= now) {
+          upcomingEventsCount++;
+        }
+      }
+    });
+
+    return res.status(200).json({
+      stats: {
+        eventsJoined: eventsJoinedCount,
+        upcomingEvents: upcomingEventsCount,
+        savedNotices: bookmarksCount,
+        clubsJoined: clubsJoinedCount
+      }
+    });
+  } catch (error) {
+    console.error("getStudentStats error:", error);
+    return res.status(500).json({ error: error.message });
+  }
+};
+
 // ─── GET /api/student/bookmarks ──────────────────────────────────────────────
 // Returns the current user's bookmarked notice IDs array.
 export const getBookmarks = async (req, res) => {

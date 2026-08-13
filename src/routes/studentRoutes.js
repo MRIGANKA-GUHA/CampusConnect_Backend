@@ -1,11 +1,13 @@
 import express from "express";
-import { getBookmarks, addBookmark, removeBookmark, joinClub, leaveClub } from "../controllers/studentController.js";
+import { getBookmarks, addBookmark, removeBookmark, joinClub, leaveClub, getStudentStats } from "../controllers/studentController.js";
 import { verifyToken } from "../middlewares/verifyToken.js";
 
 const router = express.Router();
 
 // All bookmark routes require authentication.
 // All authenticated users (student, admin, club) can use bookmarks.
+
+router.get("/stats", verifyToken, getStudentStats);
 
 // ─── Bookmarks ───
 router.get("/bookmarks", verifyToken, getBookmarks);
