@@ -104,11 +104,12 @@ export const updateClubProfile = async (req, res) => {
           website: socialLinks.website || "",
         }
       }),
+      status: "pending",
       updatedAt: new Date().toISOString()
     };
 
     await admin.firestore().collection("clubs").doc(club.id).update(updates);
-    return res.status(200).json({ message: "Club profile updated.", updates });
+    return res.status(200).json({ message: "Club profile updated. Pending admin approval.", updates });
   } catch (error) {
     console.error("updateClubProfile error:", error);
     return res.status(500).json({ error: error.message });
@@ -128,6 +129,7 @@ export const uploadClubLogo = async (req, res) => {
     const logoURL = await uploadToCloudinary(req.file.buffer, "club_logos");
     await admin.firestore().collection("clubs").doc(club.id).update({
       logoURL,
+      status: "pending",
       updatedAt: new Date().toISOString()
     });
 
@@ -140,7 +142,7 @@ export const uploadClubLogo = async (req, res) => {
       await admin.auth().updateUser(req.user.uid, { photoURL: logoURL });
     } catch (_) { }
 
-    return res.status(200).json({ message: "Club logo updated.", logoURL });
+    return res.status(200).json({ message: "Club logo updated. Pending admin approval.", logoURL });
   } catch (error) {
     console.error("uploadClubLogo error:", error);
     return res.status(500).json({ error: error.message });
@@ -159,10 +161,11 @@ export const uploadClubCover = async (req, res) => {
     const coverURL = await uploadToCloudinary(req.file.buffer, "club_covers");
     await admin.firestore().collection("clubs").doc(club.id).update({
       coverURL,
+      status: "pending",
       updatedAt: new Date().toISOString()
     });
 
-    return res.status(200).json({ message: "Club cover updated.", coverURL });
+    return res.status(200).json({ message: "Club cover updated. Pending admin approval.", coverURL });
   } catch (error) {
     console.error("uploadClubCover error:", error);
     return res.status(500).json({ error: error.message });
