@@ -16,6 +16,7 @@ import {
   deleteClubNotice,
   getClubStats
 } from "../controllers/clubController.js";
+import { getEventRegistrations, updatePaymentStatus, getClubRegistrationStats } from "../controllers/paymentController.js";
 import { verifyToken } from "../middlewares/verifyToken.js";
 import { isClub } from "../middlewares/isClub.js";
 import pdfUpload from "../middlewares/pdfUpload.js";
@@ -49,5 +50,10 @@ router.get("/members", verifyToken, isClub, getClubMembers);
 router.get("/notices", verifyToken, isClub, getClubNotices);
 router.post("/notices", verifyToken, isClub, pdfUpload.single("pdf"), postClubNotice);
 router.delete("/notices/:id", verifyToken, isClub, deleteClubNotice);
+
+// ─── Registrations ───
+router.get("/registrations/stats", verifyToken, isClub, getClubRegistrationStats);
+router.get("/events/:eventId/registrations", verifyToken, isClub, getEventRegistrations);
+router.patch("/registrations/:id/status", verifyToken, isClub, updatePaymentStatus);
 
 export default router;

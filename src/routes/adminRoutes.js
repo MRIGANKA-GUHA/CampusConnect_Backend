@@ -21,6 +21,7 @@ import {
   updateNotice,
   deleteNotice
 } from "../controllers/adminController.js";
+import { getAllRegistrations, adminUpdatePaymentStatus } from "../controllers/paymentController.js";
 import { verifyToken } from "../middlewares/verifyToken.js";
 import pdfUpload from "../middlewares/pdfUpload.js";
 
@@ -53,5 +54,9 @@ router.get("/notices", verifyToken, getNotices);
 router.post("/notices", verifyToken, pdfUpload.single('pdf'), createNotice);
 router.put("/notices/:id", verifyToken, pdfUpload.single('pdf'), updateNotice);
 router.delete("/notices/:id", verifyToken, deleteNotice);
+
+// ─── Registrations ───
+router.get("/registrations", verifyToken, getAllRegistrations);
+router.patch("/registrations/:id/status", verifyToken, adminUpdatePaymentStatus);
 
 export default router;
