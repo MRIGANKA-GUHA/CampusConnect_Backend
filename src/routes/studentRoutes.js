@@ -1,7 +1,8 @@
 import express from "express";
 import { getBookmarks, addBookmark, removeBookmark, joinClub, leaveClub, getStudentStats } from "../controllers/studentController.js";
-import { registerForEvent, getMyRegistration, getMyRegistrations } from "../controllers/paymentController.js";
+import { registerForEvent, getMyRegistration, getMyRegistrations, scanReceipt } from "../controllers/paymentController.js";
 import { verifyToken } from "../middlewares/verifyToken.js";
+import { receiptUpload } from "../middlewares/receiptUploadMiddleware.js";
 
 const router = express.Router();
 
@@ -21,7 +22,8 @@ router.post("/clubs/:clubId/join", verifyToken, joinClub);
 router.delete("/clubs/:clubId/leave", verifyToken, leaveClub);
 
 // ─── Event Registrations ───
-router.post("/events/:eventId/register", verifyToken, registerForEvent);
+router.post("/events/scan-receipt", verifyToken, receiptUpload.single("receipt"), scanReceipt);
+router.post("/events/:eventId/register", verifyToken, receiptUpload.single("receipt"), registerForEvent);
 router.get("/events/:eventId/my-registration", verifyToken, getMyRegistration);
 router.get("/registrations", verifyToken, getMyRegistrations);
 

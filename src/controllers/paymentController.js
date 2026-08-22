@@ -1,5 +1,6 @@
 import admin from "../db/firebase.js";
 import { Registration, PAYMENT_STATUS, VERIFIED_BY_ROLE } from "../models/Registration.js";
+import { uploadReceiptToCloudinary, extractUpiDetailsFromReceipt } from "../services/receiptService.js";
 
 // ─── Helper: Resolve club doc from clubAuthUid ────────────────────────────────
 const getClubByAuthUid = async (clubAuthUid) => {
@@ -13,12 +14,34 @@ const getClubByAuthUid = async (clubAuthUid) => {
   return { id: doc.id, ...doc.data() };
 };
 
+// ─── POST /api/student/events/scan-receipt ────────────────────────────────────
+// Real-time AI OCR extraction for receipt upload preview
+export const scanReceipt = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No receipt file uploaded." });
+    }
+
+    const aiExtracted = await extractUpiDetailsFromReceipt(req.file.buffer, req.file.mimetype);
+
+    return res.status(200).json({
+      success: true,
+      extractedUpiId: aiExtracted?.upiTransactionId || "",
+      amount: aiExtracted?.amount || null,
+      paymentApp: aiExtracted?.paymentApp || "UPI",
+      status: aiExtracted?.status || "SUCCESS"
+    });
+  } catch (error) {
+    console.error("scanReceipt error:", error);
+    return res.status(500).json({ error: "Failed to scan receipt image." });
+  }
+};
+
 // ─── POST /api/student/events/:eventId/register ───────────────────────────────
-// Student registers for an event (free = auto-verified, paid = pending)
+// Student registers for an event (free = auto-verified, paid = pending with receipt upload)
 export const registerForEvent = async (req, res) => {
   try {
     const { eventId } = req.params;
-    const { upiTransactionId } = req.body;
     const studentUid = req.user.uid;
 
     // Fetch event
@@ -41,8 +64,13 @@ export const registerForEvent = async (req, res) => {
       .limit(1)
       .get();
 
+    let existingDoc = null;
     if (!existingSnap.empty) {
-      return res.status(409).json({ error: "You are already registered for this event." });
+      const existingData = existingSnap.docs[0].data();
+      if (existingData.paymentStatus !== PAYMENT_STATUS.REJECTED) {
+        return res.status(409).json({ error: "You are already registered for this event." });
+      }
+      existingDoc = existingSnap.docs[0];
     }
 
     // Check capacity (if defined)
@@ -54,10 +82,43 @@ export const registerForEvent = async (req, res) => {
     const userDoc = await admin.firestore().collection("users").doc(studentUid).get();
     const studentData = userDoc.exists ? userDoc.data() : {};
 
+    const isFree = !event.price || event.price === 0;
     const now = new Date().toISOString();
 
+    let paymentImageURL = "";
+    let finalUpiId = (req.body.upiTransactionId || "").trim();
+
+    // Paid event receipt handling
+    if (!isFree) {
+      if (req.file) {
+        try {
+          // Upload to Cloudinary only when final registration is submitted
+          const uploadPromise = uploadReceiptToCloudinary(req.file.buffer, req.file.mimetype, studentUid, eventId);
+
+          if (!finalUpiId) {
+            // Fallback AI extraction if student submitted without a pre-scanned ID
+            const [cloudinaryUrl, aiExtracted] = await Promise.all([
+              uploadPromise,
+              extractUpiDetailsFromReceipt(req.file.buffer, req.file.mimetype),
+            ]);
+            paymentImageURL = cloudinaryUrl;
+            if (aiExtracted && aiExtracted.upiTransactionId) {
+              finalUpiId = aiExtracted.upiTransactionId;
+            }
+          } else {
+            paymentImageURL = await uploadPromise;
+          }
+        } catch (uploadErr) {
+          console.error("Receipt upload error:", uploadErr);
+          return res.status(500).json({ error: "Failed to upload payment receipt." });
+        }
+      } else if (!finalUpiId) {
+        return res.status(400).json({ error: "Payment receipt upload is required for paid events." });
+      }
+    }
+
     // Build registration doc using the Registration model
-    const docRef = admin.firestore().collection("registrations").doc();
+    const docRef = existingDoc ? existingDoc.ref : admin.firestore().collection("registrations").doc();
     const registration = new Registration({
       id: docRef.id,
       eventId,
@@ -77,7 +138,8 @@ export const registerForEvent = async (req, res) => {
       // Payment info
       amount: isFree ? 0 : (event.price || 0),
       paymentStatus: isFree ? PAYMENT_STATUS.VERIFIED : PAYMENT_STATUS.PENDING,
-      upiTransactionId: isFree ? "" : (upiTransactionId || ""),
+      upiTransactionId: isFree ? "" : finalUpiId,
+      paymentImageURL: isFree ? "" : paymentImageURL,
 
       // Verification trail
       registeredAt: now,
@@ -97,7 +159,11 @@ export const registerForEvent = async (req, res) => {
     });
     await batch.commit();
 
-    return res.status(201).json({ message: "Registration successful.", registration: registration.toFirestore() });
+    return res.status(201).json({
+      message: "Registration successful.",
+      registration: registration.toFirestore(),
+      extractedUpiId: finalUpiId
+    });
   } catch (error) {
     console.error("registerForEvent error:", error);
     return res.status(500).json({ error: error.message });
@@ -174,7 +240,7 @@ export const getEventRegistrations = async (req, res) => {
     registrations.sort((a, b) => new Date(b.registeredAt) - new Date(a.registeredAt));
 
     // Summary stats
-    const total = registrations.length;
+    const activeTotal = registrations.filter(r => r.paymentStatus !== "rejected").length;
     const pending = registrations.filter(r => r.paymentStatus === "pending").length;
     const verified = registrations.filter(r => r.paymentStatus === "verified").length;
     const rejected = registrations.filter(r => r.paymentStatus === "rejected").length;
@@ -184,7 +250,7 @@ export const getEventRegistrations = async (req, res) => {
 
     return res.status(200).json({
       registrations,
-      stats: { total, pending, verified, rejected, revenue }
+      stats: { total: activeTotal, totalAll: registrations.length, pending, verified, rejected, revenue }
     });
   } catch (error) {
     console.error("getEventRegistrations error:", error);
@@ -205,15 +271,16 @@ export const getClubRegistrationStats = async (req, res) => {
       .get();
 
     const all = snap.docs.map(doc => doc.data());
-    const total = all.length;
+    const activeTotal = all.filter(r => r.paymentStatus !== "rejected").length;
     const pending = all.filter(r => r.paymentStatus === "pending").length;
     const verified = all.filter(r => r.paymentStatus === "verified").length;
+    const rejected = all.filter(r => r.paymentStatus === "rejected").length;
     const revenue = all
       .filter(r => r.paymentStatus === "verified" && !r.isFree)
       .reduce((sum, r) => sum + (r.amount || 0), 0);
 
     return res.status(200).json({
-      stats: { total, pending, verified, revenue }
+      stats: { total: activeTotal, totalAll: all.length, pending, verified, rejected, revenue }
     });
   } catch (error) {
     console.error("getClubRegistrationStats error:", error);
@@ -249,13 +316,32 @@ export const updatePaymentStatus = async (req, res) => {
     }
 
     const now = new Date().toISOString();
-    await regRef.update({
+    const batch = admin.firestore().batch();
+
+    batch.update(regRef, {
       paymentStatus: status,
       verifiedAt: now,
       verifiedBy: req.user.uid,
       verifiedByRole: VERIFIED_BY_ROLE.CLUB,
       updatedAt: now,
     });
+
+    if (reg.eventId && reg.studentUid) {
+      const eventRef = admin.firestore().collection("events").doc(reg.eventId);
+      if (status === "rejected") {
+        batch.update(eventRef, {
+          attendees: admin.firestore.FieldValue.arrayRemove(reg.studentUid),
+          updatedAt: now,
+        });
+      } else if (status === "verified") {
+        batch.update(eventRef, {
+          attendees: admin.firestore.FieldValue.arrayUnion(reg.studentUid),
+          updatedAt: now,
+        });
+      }
+    }
+
+    await batch.commit();
 
     return res.status(200).json({ message: `Registration ${status}.`, id, status });
   } catch (error) {
@@ -290,9 +376,10 @@ export const getAllRegistrations = async (req, res) => {
 
     // Global stats
     const all = snap.docs.map(doc => doc.data()); // unfiltered for stats
-    const totalAll = all.length;
+    const activeTotal = all.filter(r => r.paymentStatus !== "rejected").length;
     const pendingAll = all.filter(r => r.paymentStatus === "pending").length;
     const verifiedAll = all.filter(r => r.paymentStatus === "verified").length;
+    const rejectedAll = all.filter(r => r.paymentStatus === "rejected").length;
     const revenueAll = all
       .filter(r => r.paymentStatus === "verified" && !r.isFree)
       .reduce((sum, r) => sum + (r.amount || 0), 0);
@@ -300,9 +387,11 @@ export const getAllRegistrations = async (req, res) => {
     return res.status(200).json({
       registrations,
       stats: {
-        total: totalAll,
+        total: activeTotal,
+        totalAll: all.length,
         pending: pendingAll,
         verified: verifiedAll,
+        rejected: rejectedAll,
         revenue: revenueAll
       }
     });
@@ -331,18 +420,38 @@ export const adminUpdatePaymentStatus = async (req, res) => {
     const regDoc = await regRef.get();
     if (!regDoc.exists) return res.status(404).json({ error: "Registration not found." });
 
-    if (regDoc.data().isFree) {
+    const reg = regDoc.data();
+    if (reg.isFree) {
       return res.status(400).json({ error: "Free event registrations are auto-verified and cannot be changed." });
     }
 
     const now = new Date().toISOString();
-    await regRef.update({
+    const batch = admin.firestore().batch();
+
+    batch.update(regRef, {
       paymentStatus: status,
       verifiedAt: now,
       verifiedBy: req.user.uid,
       verifiedByRole: VERIFIED_BY_ROLE.ADMIN,
       updatedAt: now,
     });
+
+    if (reg.eventId && reg.studentUid) {
+      const eventRef = admin.firestore().collection("events").doc(reg.eventId);
+      if (status === "rejected") {
+        batch.update(eventRef, {
+          attendees: admin.firestore.FieldValue.arrayRemove(reg.studentUid),
+          updatedAt: now,
+        });
+      } else if (status === "verified") {
+        batch.update(eventRef, {
+          attendees: admin.firestore.FieldValue.arrayUnion(reg.studentUid),
+          updatedAt: now,
+        });
+      }
+    }
+
+    await batch.commit();
 
     return res.status(200).json({ message: `Registration ${status} by admin.`, id, status });
   } catch (error) {

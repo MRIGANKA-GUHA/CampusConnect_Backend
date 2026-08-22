@@ -1,5 +1,5 @@
 import express from 'express';
-import { parsePdf } from '../controllers/aiController.js';
+import { parsePdf } from '../controllers/noticeaiController.js';
 import { verifyToken } from '../middlewares/verifyToken.js';
 import pdfUpload from '../middlewares/pdfUpload.js';
 

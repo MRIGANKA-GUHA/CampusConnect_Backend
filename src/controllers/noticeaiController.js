@@ -4,9 +4,9 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 const require = createRequire(import.meta.url);
 const pdfParse = require('pdf-parse');
 
-// Using gemini-2.5-flash (confirmed SUCCESS in diagnostic tests)
+// Using gemini-3.5-flash-lite (confirmed SUCCESS in diagnostic tests)
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+const model = genAI.getGenerativeModel({ model: 'gemini-3.5-flash-lite' });
 
 /** Parse a PDF buffer and return extracted text */
 const parsePdfBuffer = async (buffer) => {
