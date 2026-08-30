@@ -12,6 +12,7 @@ import {
   getPublicClubs,
   getPublicStats,
   getPublicEvents,
+  getPublicEventById,
   createClub,
   updateClubStatus,
   deleteClub,
@@ -44,6 +45,7 @@ router.patch("/events/:id/status", verifyToken, updateEventStatus);
 router.get("/clubs/public", getPublicClubs);  // No auth — for landing page
 router.get("/stats/public", getPublicStats);  // No auth — for landing page stats
 router.get("/events/public", getPublicEvents); // No auth — for landing page events
+router.get("/events/:id/public", getPublicEventById); // No auth — for QR code deep-link
 router.get("/clubs", verifyToken, getClubs);
 router.post("/clubs", verifyToken, createClub);
 router.patch("/clubs/:id/status", verifyToken, updateClubStatus);

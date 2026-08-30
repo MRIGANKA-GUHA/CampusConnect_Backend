@@ -342,6 +342,53 @@ export const getPublicEvents = async (req, res) => {
   }
 };
 
+// ─── Get Single Public Event by ID (No Auth) — for QR code deep-links ─────────
+export const getPublicEventById = async (req, res) => {
+  const { id } = req.params;
+  try {
+    const docRef = admin.firestore().collection("events").doc(id);
+    const doc = await docRef.get();
+
+    if (!doc.exists) {
+      return res.status(404).json({ error: "Event not found." });
+    }
+
+    const data = { id: doc.id, ...doc.data() };
+
+    // Auto-complete if published and past date
+    const today = new Date().toISOString().split("T")[0];
+    if (data.status === "published" && data.date && data.date < today) {
+      data.status = "completed";
+      await docRef.update({ status: "completed", updatedAt: new Date().toISOString() });
+    }
+
+    // Only expose public-safe fields
+    return res.status(200).json({
+      event: {
+        id: data.id,
+        title: data.title,
+        description: data.description,
+        date: data.date,
+        time: data.time,
+        venue: data.venue,
+        category: data.category,
+        price: data.price,
+        capacity: data.capacity,
+        bannerURL: data.bannerURL,
+        pdfURL: data.pdfURL,
+        pdfName: data.pdfName,
+        clubName: data.clubName,
+        status: data.status,
+        registrationDeadline: data.registrationDeadline,
+        attendeesCount: (data.attendees || []).length,
+      }
+    });
+  } catch (error) {
+    console.error("Public event by ID error:", error);
+    return res.status(500).json({ error: error.message });
+  }
+};
+
 // ─── Get All Clubs (Admin) ──────────────────────────────────────────────────────
 export const getClubs = async (req, res) => {
   try {
