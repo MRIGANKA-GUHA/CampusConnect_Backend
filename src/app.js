@@ -5,6 +5,7 @@ import adminRoutes from "./routes/adminRoutes.js";
 import studentRoutes from "./routes/studentRoutes.js";
 import clubRoutes from "./routes/clubRoutes.js";
 import aiRoutes from "./routes/aiRoutes.js";
+import chatRoutes from "./routes/chatRoutes.js";
 
 const app = express();
 
@@ -32,6 +33,7 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/student", studentRoutes);
 app.use("/api/club", clubRoutes);
 app.use("/api/ai", aiRoutes);
+app.use("/api/chat", chatRoutes);
 
 // Health check
 app.get("/", (req, res) => {
