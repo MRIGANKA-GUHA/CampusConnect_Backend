@@ -9,21 +9,23 @@ import chatRoutes from "./routes/chatRoutes.js";
 
 const app = express();
 
-const allowedOrigins = [
-  "https://campuscon.vercel.app",
-  "http://localhost:5173",
-  "http://localhost:5174"
-];
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true;
+  if (origin.endsWith('.vercel.app')) return true;
+  if (origin.includes('localhost') || origin.includes('127.0.0.1')) return true;
+  if (/^http:\/\/(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?$/.test(origin)) return true;
+  return false;
+};
 
-app.use(cors({ 
+app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (isAllowedOrigin(origin)) {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      callback(null, false);
     }
-  }, 
-  credentials: true 
+  },
+  credentials: true
 }));
 app.use(express.json());
 

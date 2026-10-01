@@ -7,11 +7,13 @@ import { setIo } from "./socket/ioInstance.js";
 
 const PORT = process.env.PORT || 5000;
 
-const allowedOrigins = [
-  "https://campuscon.vercel.app",
-  "http://localhost:5173",
-  "http://localhost:5174",
-];
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true;
+  if (origin.endsWith('.vercel.app')) return true;
+  if (origin.includes('localhost') || origin.includes('127.0.0.1')) return true;
+  if (/^http:\/\/(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?$/.test(origin)) return true;
+  return false;
+};
 
 // Wrap Express app in a native HTTP server so Socket.IO can share the same port
 const httpServer = createServer(app);
@@ -20,10 +22,10 @@ const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
+      if (isAllowedOrigin(origin)) {
         callback(null, true);
       } else {
-        callback(new Error("Not allowed by CORS"));
+        callback(null, false);
       }
     },
     credentials: true,

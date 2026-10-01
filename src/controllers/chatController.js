@@ -348,3 +348,107 @@ export const searchStudents = async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 };
+
+// ─── POST /api/chat/messages ────────────────────────────────────────────────
+// Send a message via HTTP REST (works on Vercel serverless where WebSockets disconnect).
+export const sendDirectMessage = async (req, res) => {
+  const uid = req.user.uid;
+  const { toUid, text } = req.body;
+
+  if (!toUid || !text || !text.trim()) {
+    return res.status(400).json({ error: "toUid and text are required" });
+  }
+
+  try {
+    const db = admin.firestore();
+    const convId = getConversationId(uid, toUid);
+
+    // Validate friendship
+    const friendshipDoc = await db.collection("friendships").doc(convId).get();
+    if (!friendshipDoc.exists || friendshipDoc.data()?.status !== "accepted") {
+      return res.status(403).json({ error: "You can only message friends" });
+    }
+
+    const now = admin.firestore.FieldValue.serverTimestamp();
+
+    // Save message to Firestore
+    const messageRef = await db
+      .collection("conversations")
+      .doc(convId)
+      .collection("messages")
+      .add({
+        senderUid: uid,
+        text: text.trim(),
+        createdAt: now,
+        read: false,
+      });
+
+    // Update conversation metadata
+    await db.collection("conversations").doc(convId).set(
+      {
+        participants: [uid, toUid].sort(),
+        lastMessage: text.trim().substring(0, 100),
+        lastMessageAt: now,
+        [`unreadCount.${toUid}`]: admin.firestore.FieldValue.increment(1),
+      },
+      { merge: true }
+    );
+
+    const messagePayload = {
+      id: messageRef.id,
+      convId,
+      senderUid: uid,
+      toUid,
+      text: text.trim(),
+      createdAt: new Date().toISOString(),
+      read: false,
+    };
+
+    // If Socket.IO is available, emit real-time event to receiver
+    getIo()?.to(toUid).emit("receive_message", messagePayload);
+
+    return res.status(201).json({ success: true, message: messagePayload });
+  } catch (err) {
+    console.error("sendDirectMessage error:", err);
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+// ─── PATCH /api/chat/mark-read ──────────────────────────────────────────────
+// Mark conversation messages as read via HTTP.
+export const markMessagesRead = async (req, res) => {
+  const uid = req.user.uid;
+  const { convId, friendUid } = req.body;
+
+  if (!convId) return res.status(400).json({ error: "convId is required" });
+
+  try {
+    const db = admin.firestore();
+
+    await db.collection("conversations").doc(convId).set(
+      { [`unreadCount.${uid}`]: 0 },
+      { merge: true }
+    );
+
+    if (friendUid) {
+      const unreadSnap = await db
+        .collection("conversations")
+        .doc(convId)
+        .collection("messages")
+        .where("senderUid", "==", friendUid)
+        .where("read", "==", false)
+        .get();
+
+      const batch = db.batch();
+      unreadSnap.forEach((doc) => batch.update(doc.ref, { read: true }));
+      await batch.commit();
+
+      getIo()?.to(friendUid).emit("messages_read", { convId, byUid: uid });
+    }
+
+    return res.status(200).json({ success: true });
+  } catch (err) {
+    console.error("markMessagesRead error:", err);
+    return res.status(500).json({ error: err.message });
+  }
+};

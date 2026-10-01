@@ -7,6 +7,8 @@ import {
   removeFriend,
   getConversationHistory,
   searchStudents,
+  sendDirectMessage,
+  markMessagesRead,
 } from "../controllers/chatController.js";
 import { verifyToken } from "../middlewares/verifyToken.js";
 
@@ -24,6 +26,8 @@ router.delete("/friends/:friendUid", verifyToken, removeFriend);
 
 // ─── Messages ─────────────────────────────────────────────────────────────────
 router.get("/messages/:friendUid", verifyToken, getConversationHistory);
+router.post("/messages", verifyToken, sendDirectMessage);
+router.patch("/mark-read", verifyToken, markMessagesRead);
 
 // ─── Student Search ───────────────────────────────────────────────────────────
 router.get("/search-students", verifyToken, searchStudents);
