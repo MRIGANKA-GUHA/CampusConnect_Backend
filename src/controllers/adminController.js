@@ -27,6 +27,73 @@ export const getDashboardStats = async (req, res) => {
   }
 };
 
+// ─── Get Recent Activities Feed ───────────────────────────────────────────────
+export const getRecentActivities = async (req, res) => {
+  try {
+    const firestore = admin.firestore();
+
+    // Fetch last 10 of each collection in parallel
+    const [usersSnap, eventsSnap, clubsSnap] = await Promise.all([
+      firestore.collection("users").orderBy("createdAt", "desc").limit(10).get(),
+      firestore.collection("events").orderBy("createdAt", "desc").limit(10).get(),
+      firestore.collection("clubs").orderBy("createdAt", "desc").limit(10).get(),
+    ]);
+
+    const activities = [];
+
+    usersSnap.forEach((doc) => {
+      const d = doc.data();
+      activities.push({
+        type: "user",
+        label: `New student registered: ${d.displayName || d.email || "Unknown"}`,
+        sublabel: `Roll No: ${d.rollNo || "—"} · ${d.email || ""}`,
+        timestamp: d.createdAt || null,
+      });
+    });
+
+    eventsSnap.forEach((doc) => {
+      const d = doc.data();
+      const statusLabel = d.status === "pending"
+        ? "Event submitted for approval"
+        : d.status === "published"
+        ? "Event published"
+        : d.status === "completed"
+        ? "Event completed"
+        : "Event updated";
+      activities.push({
+        type: "event",
+        label: `${statusLabel}: ${d.title || "Untitled Event"}`,
+        sublabel: `By ${d.clubName || "a club"} · ${d.date || ""}`,
+        timestamp: d.createdAt || d.updatedAt || null,
+      });
+    });
+
+    clubsSnap.forEach((doc) => {
+      const d = doc.data();
+      activities.push({
+        type: "club",
+        label: `Club registered: ${d.name || "Unnamed Club"}`,
+        sublabel: `Category: ${d.category || "—"} · Status: ${d.status || "—"}`,
+        timestamp: d.createdAt || null,
+      });
+    });
+
+    // Sort all by timestamp descending and return top 20
+    activities.sort((a, b) => {
+      const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+      const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+      return tb - ta;
+    });
+
+    return res.status(200).json({ activities: activities.slice(0, 20) });
+  } catch (error) {
+    console.error("Admin getRecentActivities error:", error);
+    return res.status(500).json({ error: error.message });
+  }
+};
+
+
+
 // ─── Get All Events (Admin) ─────────────────────────────────────────────────────
 export const getAllEvents = async (req, res) => {
   try {
@@ -329,13 +396,10 @@ export const getPublicEvents = async (req, res) => {
 
     if (hasAutoCompletes) await autoCompleteBatch.commit();
 
-    // Sort in memory to avoid composite index requirement
+    // Sort in memory to avoid composite index requirement (earliest date first)
     events.sort((a, b) => new Date(a.date) - new Date(b.date));
-    
-    // Limit to 6
-    const topEvents = events.slice(0, 6);
 
-    return res.status(200).json({ events: topEvents });
+    return res.status(200).json({ events });
   } catch (error) {
     console.error("Public events error:", error);
     return res.status(500).json({ error: error.message });
@@ -529,6 +593,48 @@ export const deleteClub = async (req, res) => {
     return res.status(200).json({ message: "Club deleted successfully." });
   } catch (error) {
     console.error("Admin deleteClub error:", error);
+    return res.status(500).json({ error: error.message });
+  }
+};
+
+// ─── Update Club Convenor ─────────────────────────────────────────────────────
+export const updateClubConvenor = async (req, res) => {
+  const { id } = req.params;
+  const { convenorEmail } = req.body;
+
+  if (!convenorEmail) {
+    return res.status(400).json({ error: "Convenor email is required." });
+  }
+
+  try {
+    // Resolve Firebase user by email
+    const convenorRecord = await admin.auth().getUserByEmail(convenorEmail);
+    const convenorId = convenorRecord.uid;
+
+    // Get convenor profile from Firestore
+    const userDoc = await admin.firestore().collection("users").doc(convenorId).get();
+    const userData = userDoc.exists ? userDoc.data() : {};
+    const convenorName = userData.displayName || convenorRecord.displayName || convenorEmail;
+    const convenorPhoto = userData.photoURL || convenorRecord.photoURL || "";
+
+    // Update the club document
+    await admin.firestore().collection("clubs").doc(id).update({
+      convenorId,
+      updatedAt: new Date().toISOString()
+    });
+
+    return res.status(200).json({
+      message: "Convenor updated successfully.",
+      convenorId,
+      convenorName,
+      convenorPhoto,
+      convenorEmail
+    });
+  } catch (error) {
+    console.error("Admin updateClubConvenor error:", error);
+    if (error.code === "auth/user-not-found") {
+      return res.status(404).json({ error: "No user found with that email." });
+    }
     return res.status(500).json({ error: error.message });
   }
 };

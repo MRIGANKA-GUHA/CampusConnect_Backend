@@ -218,7 +218,7 @@ export const loginUser = async (req, res) => {
 
 // ─── OAuth Login (Google/GitHub - verify ID token from frontend) ────────────
 export const oauthLogin = async (req, res) => {
-  const { idToken } = req.body;
+  const { idToken, photoURL: clientPhotoURL, displayName: clientDisplayName } = req.body;
 
   if (!idToken) {
     return res.status(400).json({ error: "ID token is required" });
@@ -228,6 +228,30 @@ export const oauthLogin = async (req, res) => {
     // Verify the ID token from Firebase client SDK OAuth
     const decodedToken = await admin.auth().verifyIdToken(idToken);
     const userAuth = await admin.auth().getUser(decodedToken.uid);
+
+    // Resolve profile photo from all possible sources (client, decoded token, userAuth, providerData)
+    const providerPhoto = userAuth.providerData?.find(p => p?.photoURL)?.photoURL;
+    const resolvedPhotoURL = clientPhotoURL || decodedToken.picture || userAuth.photoURL || providerPhoto || "";
+
+    // Resolve display name
+    const providerName = userAuth.providerData?.find(p => p?.displayName)?.displayName;
+    const resolvedDisplayName = clientDisplayName || decodedToken.name || userAuth.displayName || providerName || userAuth.email.split('@')[0];
+
+    // If Firebase Auth record is missing photoURL or displayName, sync it
+    const authUpdates = {};
+    if (resolvedPhotoURL && (!userAuth.photoURL || userAuth.photoURL !== resolvedPhotoURL)) {
+      authUpdates.photoURL = resolvedPhotoURL;
+    }
+    if (resolvedDisplayName && (!userAuth.displayName || userAuth.displayName !== resolvedDisplayName)) {
+      authUpdates.displayName = resolvedDisplayName;
+    }
+    if (Object.keys(authUpdates).length > 0) {
+      try {
+        await admin.auth().updateUser(userAuth.uid, authUpdates);
+      } catch (err) {
+        console.warn("Could not update Firebase Auth user with OAuth photo/name:", err.message);
+      }
+    }
 
     // Check if user profile exists in Firestore
     const userDocRef = admin.firestore().collection("users").doc(userAuth.uid);
@@ -240,11 +264,11 @@ export const oauthLogin = async (req, res) => {
       const oauthPayload = {
         uid: userAuth.uid,
         email: userAuth.email,
-        displayName: userAuth.displayName,
-        photoURL: userAuth.photoURL,
+        displayName: resolvedDisplayName,
+        photoURL: resolvedPhotoURL,
         role: "student",
         isVerified: true,
-        authProvider: decodedToken.firebase.sign_in_provider
+        authProvider: decodedToken.firebase?.sign_in_provider || "google.com"
       };
 
       // Validate against the User schema before persisting
@@ -257,6 +281,20 @@ export const oauthLogin = async (req, res) => {
       await userDocRef.set(userData);
     } else {
       userData = userDoc.data();
+      // If existing user in Firestore is missing photoURL or has empty string, update with Google's photo
+      const docUpdates = {};
+      if (resolvedPhotoURL && (!userData.photoURL || userData.photoURL === "")) {
+        docUpdates.photoURL = resolvedPhotoURL;
+        userData.photoURL = resolvedPhotoURL;
+      }
+      if (resolvedDisplayName && (!userData.displayName || userData.displayName === "")) {
+        docUpdates.displayName = resolvedDisplayName;
+        userData.displayName = resolvedDisplayName;
+      }
+      if (Object.keys(docUpdates).length > 0) {
+        docUpdates.updatedAt = new Date().toISOString();
+        await userDocRef.update(docUpdates);
+      }
     }
 
     // Create custom token for session management
@@ -269,11 +307,11 @@ export const oauthLogin = async (req, res) => {
       message: "OAuth login successful",
       token: customToken,
       user: {
+        ...userData,
         uid: userAuth.uid,
         email: userAuth.email,
-        displayName: userAuth.displayName,
-        photoURL: userAuth.photoURL,
-        ...userData
+        displayName: userData.displayName || resolvedDisplayName,
+        photoURL: resolvedPhotoURL || userData.photoURL || "",
       },
     });
   } catch (error) {
@@ -307,17 +345,29 @@ export const getProfile = async (req, res) => {
       }
     }
 
+    // Check providerData for photoURL if top-level userAuth or userData photoURL is empty
+    const providerPhoto = userAuth.providerData?.find(p => p?.photoURL)?.photoURL;
+    const resolvedPhotoURL = userData.role === 'club'
+      ? (userData.photoURL || userAuth.photoURL || "")
+      : (userAuth.photoURL || userData.photoURL || providerPhoto || "");
+
+    // If user has a resolved photo from OAuth provider but Firestore or Auth is empty, sync it
+    if (resolvedPhotoURL && userData.role !== 'club') {
+      if (userDoc.exists && (!userData.photoURL || userData.photoURL === "")) {
+        userDoc.ref.update({ photoURL: resolvedPhotoURL, updatedAt: new Date().toISOString() }).catch(() => {});
+        userData.photoURL = resolvedPhotoURL;
+      }
+      if (!userAuth.photoURL || userAuth.photoURL !== resolvedPhotoURL) {
+        admin.auth().updateUser(userAuth.uid, { photoURL: resolvedPhotoURL }).catch(() => {});
+      }
+    }
+
     return res.status(200).json({
       uid: userAuth.uid,
       email: userAuth.email,
       displayName: userAuth.displayName || userData.displayName || "",
-      photoURL: userAuth.photoURL || userData.photoURL || "",
       ...userData,
-      // Always override with Firebase Auth photoURL as final source of truth for non-club users
-      // (upload endpoint writes to Firebase Auth, so this stays in sync)
-      photoURL: userData.role === 'club'
-        ? (userData.photoURL || userAuth.photoURL || "")
-        : (userAuth.photoURL || userData.photoURL || ""),
+      photoURL: resolvedPhotoURL,
     });
   } catch (error) {
     return res.status(500).json({ error: error.message });

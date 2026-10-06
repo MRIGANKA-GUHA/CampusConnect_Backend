@@ -1,6 +1,7 @@
 import express from "express";
 import { 
   getDashboardStats,
+  getRecentActivities,
   getAllEvents,
   updateEventStatus,
   getStudents, 
@@ -15,6 +16,7 @@ import {
   getPublicEventById,
   createClub,
   updateClubStatus,
+  updateClubConvenor,
   deleteClub,
   getConvenors,
   getNotices,
@@ -30,6 +32,7 @@ const router = express.Router();
 
 // ─── User Management ───
 router.get("/stats/dashboard", verifyToken, getDashboardStats);
+router.get("/stats/activities", verifyToken, getRecentActivities);
 router.get("/students", verifyToken, getStudents);
 router.delete("/students/:id", verifyToken, deleteUser);
 router.patch("/students/:id/role", verifyToken, updateUserRole);
@@ -49,6 +52,7 @@ router.get("/events/:id/public", getPublicEventById); // No auth — for QR code
 router.get("/clubs", verifyToken, getClubs);
 router.post("/clubs", verifyToken, createClub);
 router.patch("/clubs/:id/status", verifyToken, updateClubStatus);
+router.patch("/clubs/:id/convenor", verifyToken, updateClubConvenor);
 router.delete("/clubs/:id", verifyToken, deleteClub);
 
 // ─── Notices ───

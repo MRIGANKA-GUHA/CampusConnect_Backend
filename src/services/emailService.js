@@ -18,7 +18,7 @@ export const sendOtpEmail = async (to, otp, name) => {
   const mailOptions = {
     from: `"CampusConnect" <${process.env.EMAIL_USER}>`,
     to,
-    subject: `🔐 Verify your CampusConnect Account`,
+    subject: `Verify your CampusConnect Account`,
     html: `
       <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #1e293b; background-color: #f8fafc;">
         <div style="background-color: #ffffff; padding: 40px; border-radius: 24px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);">
